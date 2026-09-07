@@ -44,13 +44,13 @@ export const NationalCapacityAnalytics: React.FC = () => {
       <div className="liquid-glass-accent rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 border border-slate-200 dark:border-slate-800">
         <div className="space-y-1.5 max-w-2xl">
           <span className="text-[10px] font-bold uppercase tracking-wider text-rose-800 dark:text-rose-300 bg-rose-100 dark:bg-rose-950/80 px-2.5 py-1 rounded-full border border-rose-200 dark:border-rose-800">
-            Executive Mission Command Telemetry
+            Institutional CBP Dashboard • Mission Karmayogi
           </span>
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            National Earth Science Capacity Analytics
+            Institutional CBP Dashboard
           </h2>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-            Real-time competency indices across IMD, INCOIS, NCMRWF, IITM, and NCPOR. Track operational readiness against the National Monsoon Mission, Deep Ocean Mission, and Tsunami Early Warning mandates.
+            National Earth Science Capacity Building Plan (CBP) analytics and real-time competency indices across IMD, INCOIS, NCMRWF, IITM, and NCPOR. Tracking operational readiness against National Monsoon Mission, Deep Ocean Mission, and Tsunami Early Warning mandates.
           </p>
         </div>
 

@@ -273,14 +273,24 @@ export const TraineeProfile: React.FC<TraineeProfileProps> = ({ user, onUpdateUs
                 {user.bio}
               </p>
 
-              {/* iGOT Karmayogi Indicators & NCF-ID Badges */}
-              <div className="flex flex-wrap items-center gap-2 pt-1.5">
+              {/* iGOT Karmayogi Verified & NCF Indicators */}
+              <div className="flex flex-wrap items-center gap-2.5 pt-2">
+                <div 
+                  id="trainee-igot-karmayogi-verified-badge"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 text-xs font-black shadow-xs tracking-tight"
+                  title="Official DoPT iGOT Karmayogi Bharat Verified Credential"
+                >
+                  <Award className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>iGOT Karmayogi Verified</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                </div>
+
                 <div 
                   id="trainee-profile-karma-badge"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-xs font-bold shadow-xs"
                 >
                   <Sparkles className="w-4 h-4 text-amber-500 fill-amber-400" />
-                  <span>iGOT Karma Points:</span>
+                  <span>Karma Points:</span>
                   <span className="font-mono font-black text-amber-700 dark:text-amber-300 text-sm">
                     {(user.igotKarmaPoints ?? 1450).toLocaleString()} PTS
                   </span>
@@ -296,9 +306,12 @@ export const TraineeProfile: React.FC<TraineeProfileProps> = ({ user, onUpdateUs
                   </span>
                 </div>
 
-                <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-300 text-[11px] font-semibold">
-                  <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>National Competency Aligned</span>
+                <div 
+                  id="trainee-profile-cbp-badge"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300 text-[11px] font-bold"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-rose-600" />
+                  <span>CBP Compliance: 100% Satisfied</span>
                 </div>
               </div>
             </div>

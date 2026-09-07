@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { X, Download, Printer, ShieldCheck, CheckCircle2, QrCode } from 'lucide-react';
+import { X, Download, Printer, ShieldCheck, CheckCircle2, QrCode, Award, Sparkles } from 'lucide-react';
 
 interface CertificateModalProps {
   traineeName: string;
@@ -104,6 +104,33 @@ export const CertificateModal: React.FC<CertificateModalProps> = ({
             <p className="text-xs text-slate-600 mt-2">
               achieving an examination score of <strong className="text-emerald-700 font-black text-sm">{score}% (Grade A Distinction)</strong>.
             </p>
+
+            {/* iGOT Karmayogi Verified Badge with NCF-ID & Karma Points */}
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-4">
+              <div 
+                id="certificate-igot-verified-badge"
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border-2 border-emerald-500 text-emerald-900 text-xs font-black shadow-xs"
+              >
+                <Award className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>iGOT Karmayogi Verified</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              </div>
+
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+                <span>+120 Karma Points Credited</span>
+              </div>
+
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 border border-slate-300 text-slate-800 text-xs font-mono font-bold">
+                <span className="text-slate-500 font-sans text-[10px] uppercase">NCF-ID:</span>
+                <span className="text-rose-700">{certificateId}</span>
+              </div>
+
+              <div className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-bold">
+                <ShieldCheck className="w-3.5 h-3.5 text-rose-600" />
+                <span>CBP Compliance: Certified</span>
+              </div>
+            </div>
           </div>
 
           {/* Footer Details: Signatures & QR Verification */}

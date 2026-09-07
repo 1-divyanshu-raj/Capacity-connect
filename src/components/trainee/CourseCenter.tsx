@@ -56,25 +56,25 @@ export const CourseCenter: React.FC<CourseCenterProps> = ({
         <div className="space-y-2 max-w-2xl">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-100 dark:bg-rose-950/80 text-rose-800 dark:text-rose-300 text-xs font-bold border border-rose-200 dark:border-rose-800">
             <Radio className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 animate-pulse" />
-            <span>National Earth Sciences Training Modules</span>
+            <span>Competency Hub • iGOT Karmayogi Aligned</span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            Curated MoES Capacity Building Catalog
+            Competency Hub - Capacity Building Catalog
           </h2>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-            Standardized operational curricula developed by IMD, NCMRWF, INCOIS, IITM, and NCPOR for probationary meteorologists and researchers.
+            National Capacity Building Plan (CBP) standardized operational curricula developed by IMD, NCMRWF, INCOIS, IITM, and NCPOR for probationary meteorologists, scientific officers, and researchers.
           </p>
         </div>
 
         {/* Quick Stats Pill */}
         <div className="flex items-center gap-4 bg-white/90 dark:bg-slate-800/90 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-sm shrink-0">
           <div>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">Available Modules</span>
-            <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">{courses.length}</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">Competencies</span>
+            <span className="text-2xl font-black text-slate-900 dark:text-white font-mono">{courses.length} Modules</span>
           </div>
           <div className="w-px h-10 bg-slate-200 dark:bg-slate-700" />
           <div>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">Enrolled Count</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">Enrolled Officers</span>
             <span className="text-2xl font-black text-rose-600 dark:text-rose-400 font-mono">
               {courses.reduce((acc, curr) => acc + curr.enrolledCount, 0).toLocaleString()}
             </span>
@@ -177,10 +177,10 @@ export const CourseCenter: React.FC<CourseCenterProps> = ({
 
                 <span 
                   className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/60 border border-amber-300/80 dark:border-amber-700/80 text-amber-800 dark:text-amber-300"
-                  title="iGOT Karmayogi Points credited on completion"
+                  title="iGOT Karmayogi Karma Points credited on completion"
                 >
                   <Sparkles className="w-3 h-3 text-amber-500 fill-amber-400" />
-                  <span>+{course.igotKarmaPoints || 120} Karma Pts</span>
+                  <span>+{course.igotKarmaPoints || 120} Karma Points</span>
                 </span>
 
                 <span 
@@ -188,7 +188,14 @@ export const CourseCenter: React.FC<CourseCenterProps> = ({
                   title="Verified compliant with iGOT Karmayogi standards"
                 >
                   <Award className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                  <span>iGOT Aligned</span>
+                  <span>iGOT Karmayogi Verified</span>
+                </span>
+
+                <span 
+                  className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900 text-rose-800 dark:text-rose-300"
+                  title="National Capacity Building Plan Aligned"
+                >
+                  <span>CBP Compliance: Aligned</span>
                 </span>
               </div>
 

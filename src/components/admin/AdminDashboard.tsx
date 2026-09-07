@@ -5,6 +5,7 @@ import { NationalCapacityAnalytics } from './NationalCapacityAnalytics';
 import { AnnouncementCenter } from './AnnouncementCenter';
 import { PersonnelProfilesDirectory } from './PersonnelProfilesDirectory';
 import { LivePresenceHUD } from './LivePresenceHUD';
+import { IgotApiSyncEngine } from './IgotApiSyncEngine';
 import { 
   ShieldAlert, 
   BarChart3, 
@@ -16,7 +17,8 @@ import {
   GraduationCap,
   Award,
   Activity,
-  Radio
+  Radio,
+  RefreshCw
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -42,7 +44,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onDeleteAnnouncement,
   onSignOut,
 }) => {
-  const [activeTab, setActiveTab] = useState<'presence' | 'analytics' | 'approvals' | 'directory' | 'announcements'>('presence');
+  const [activeTab, setActiveTab] = useState<'presence' | 'analytics' | 'sync' | 'approvals' | 'directory' | 'announcements'>('presence');
 
   const pendingCount = approvals.filter((a) => a.status === 'Pending').length;
 
@@ -127,7 +129,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           }`}
         >
           <BarChart3 className="w-4 h-4" />
-          <span>National Capacity Analytics</span>
+          <span>Institutional CBP Dashboard</span>
+        </button>
+
+        <button
+          id="admin-tab-sync"
+          type="button"
+          onClick={() => setActiveTab('sync')}
+          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeTab === 'sync'
+              ? 'bg-slate-900 dark:bg-rose-600 text-white shadow-sm'
+              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700'
+          }`}
+        >
+          <RefreshCw className="w-4 h-4 text-emerald-500" />
+          <span>iGOT API Sync Engine</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
         </button>
 
         <button
@@ -184,9 +201,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {activeTab === 'analytics' && (
-        <div className="space-y-6">
+        <div className="space-y-8">
           <NationalCapacityAnalytics />
+          <IgotApiSyncEngine />
         </div>
+      )}
+
+      {activeTab === 'sync' && (
+        <IgotApiSyncEngine />
       )}
 
       {activeTab === 'approvals' && (

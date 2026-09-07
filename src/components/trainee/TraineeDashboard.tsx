@@ -19,6 +19,7 @@ import { CertificateModal } from './CertificateModal';
 import { AICoPilotWidget } from './AICoPilotWidget';
 import { AssignmentUploadCenter } from './AssignmentUploadCenter';
 import { PresentationUploadCenter } from './PresentationUploadCenter';
+import { DiscussionForums } from '../common/DiscussionForums';
 import { 
   BookOpen, 
   UserCheck, 
@@ -31,7 +32,9 @@ import {
   FileCheck,
   ChevronRight,
   Database,
-  Video
+  Video,
+  MessageSquare,
+  ShieldCheck
 } from 'lucide-react';
 
 interface TraineeDashboardProps {
@@ -80,7 +83,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
   };
 
-  const [activeTab, setActiveTab] = useState<'courses' | 'tasks' | 'presentations' | 'assessments' | 'profile'>('courses');
+  const [activeTab, setActiveTab] = useState<'courses' | 'tasks' | 'presentations' | 'assessments' | 'forums' | 'profile'>('courses');
   const [selectedCourseForView, setSelectedCourseForView] = useState<Course | null>(null);
   
   // Active assessment being taken
@@ -149,17 +152,6 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           </p>
         </div>
 
-        <div className="liquid-glass-card rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-700 shadow-sm bg-white/80 dark:bg-slate-800/80">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
-            <span className="text-xs font-semibold">Average Progress</span>
-            <TrendingUp className="w-4 h-4 text-rose-600 dark:text-rose-400" />
-          </div>
-          <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">{avgProgress}%</div>
-          <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 mt-2 overflow-hidden">
-            <div className="h-full bg-rose-600 dark:bg-rose-500 rounded-full" style={{ width: `${avgProgress}%` }} />
-          </div>
-        </div>
-
         <div 
           id="trainee-overview-karma-card"
           className="liquid-glass-card rounded-2xl p-4 sm:p-5 border border-amber-200/80 dark:border-amber-900/60 shadow-sm bg-amber-50/40 dark:bg-amber-950/20"
@@ -176,9 +168,31 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           </div>
           <div className="flex items-center justify-between text-[11px] text-amber-700 dark:text-amber-400 mt-1 font-medium">
             <span>{currentUser.certificates.length} Credentials</span>
-            <span className="font-mono font-bold text-[10px] px-1.5 py-0.5 rounded bg-amber-100/80 dark:bg-amber-900/60">
-              {currentUser.ncfId || 'NCF-MET-001'}
+            <span className="font-mono font-bold text-[10px] px-1.5 py-0.5 rounded bg-amber-100/80 dark:bg-amber-900/60" title="National Competency Framework Identifier">
+              NCF-ID: {currentUser.ncfId || 'NCF-MET-001'}
             </span>
+          </div>
+        </div>
+
+        <div 
+          id="trainee-overview-cbp-compliance-card"
+          className="liquid-glass-card rounded-2xl p-4 sm:p-5 border border-emerald-200/80 dark:border-emerald-900/60 shadow-sm bg-emerald-50/40 dark:bg-emerald-950/20"
+        >
+          <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-400 mb-2">
+            <span className="text-xs font-semibold flex items-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+              CBP Compliance
+            </span>
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-300">
+              iGOT SYNCED
+            </span>
+          </div>
+          <div className="text-2xl font-black text-emerald-800 dark:text-emerald-200 font-mono">
+            100% On Track
+          </div>
+          <div className="flex items-center justify-between text-[11px] text-emerald-700 dark:text-emerald-400 mt-1 font-medium">
+            <span>MoES CBC Plan</span>
+            <span>Avg Progress: {avgProgress}%</span>
           </div>
         </div>
       </div>
@@ -196,7 +210,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           }`}
         >
           <BookOpen className="w-4 h-4" />
-          <span>Course Center ({courses.length})</span>
+          <span>Competency Hub ({courses.length})</span>
         </button>
 
         <button
@@ -242,6 +256,20 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         </button>
 
         <button
+          id="trainee-tab-forums"
+          type="button"
+          onClick={() => { setActiveTab('forums'); setActiveAssessmentId(null); }}
+          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeTab === 'forums' && !activeAssessmentId
+              ? 'bg-slate-900 dark:bg-rose-600 text-white shadow-sm'
+              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4" />
+          <span>Discussion Forums</span>
+        </button>
+
+        <button
           id="trainee-tab-profile"
           type="button"
           onClick={() => { setActiveTab('profile'); setActiveAssessmentId(null); }}
@@ -252,7 +280,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           }`}
         >
           <UserCheck className="w-4 h-4" />
-          <span>Profile & Certificates</span>
+          <span>My iGOT (Competencies)</span>
         </button>
       </div>
 
@@ -349,6 +377,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
             ))}
           </div>
         </div>
+      ) : activeTab === 'forums' ? (
+        <DiscussionForums currentUser={currentUser} />
       ) : (
         <TraineeProfile
           user={currentUser}

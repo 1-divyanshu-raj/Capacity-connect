@@ -378,3 +378,31 @@ export interface ActiveLearningSession {
   engagementVerified: boolean;
 }
 
+// iGOT Karmayogi Discussion Forums & Academic Exchange
+export interface DiscussionReply {
+  id: string;
+  author: string;
+  authorRole: UserRole;
+  authorInstitute: string;
+  content: string;
+  createdAt: string;
+  isFacultyVerified?: boolean;
+  karmaPointsAwarded?: number;
+}
+
+export interface DiscussionTopic {
+  id: string;
+  title: string;
+  author: string;
+  authorRole: UserRole;
+  authorInstitute: string;
+  category: 'Radar Meteorology' | 'NWP Modeling' | 'Ocean Telemetry & Tsunamis' | 'Seismology' | 'iGOT Karma Points & CBP';
+  content: string;
+  createdAt: string;
+  repliesCount: number;
+  isResolved: boolean;
+  ncfCompetencyCode?: string;
+  karmaPointsReward?: number;
+  replies: DiscussionReply[];
+}
+
