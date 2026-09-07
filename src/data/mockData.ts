@@ -1673,7 +1673,7 @@ export const MOCK_PENDING_APPROVALS = [
     role: 'trainer' as const,
     institute: 'IITM Pune - Monsoon Dynamic Meteorology',
     designation: "Scientist 'F' (Monsoon Mission II)",
-    submittedDocs: '14 Senior Research Theses & Fellowship Records (PDF)',
+    submittedDocs: '14 Senior Research Publications & Fellowship Records (PDF)',
     requestedDate: '30 Aug 2026',
     status: 'Pending' as const,
   },

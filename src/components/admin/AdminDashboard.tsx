@@ -14,7 +14,6 @@ import {
   CheckCircle2, 
   Building2, 
   Fingerprint,
-  GraduationCap,
   Award,
   Activity,
   Radio,
@@ -52,7 +51,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     <div className="min-h-[calc(100vh-80px)] p-3 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 max-w-7xl mx-auto max-w-full overflow-x-hidden">
       
       {/* Overview Stat Cards with High Organizational Scaling */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="liquid-glass-card rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-700 shadow-sm bg-white/80 dark:bg-slate-800/80">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
             <span className="text-xs font-semibold">Trained Scientists</span>
@@ -60,15 +59,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
           <div className="text-2xl font-black text-slate-900 dark:text-white font-mono">4,980+</div>
           <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1 font-medium">3,420+ Certified Officers</p>
-        </div>
-
-        <div className="liquid-glass-card rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-700 shadow-sm bg-white/80 dark:bg-slate-800/80">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
-            <span className="text-xs font-semibold">Research Theses</span>
-            <GraduationCap className="w-4 h-4 text-rose-600 dark:text-rose-400" />
-          </div>
-          <div className="text-2xl font-black text-rose-600 dark:text-rose-400 font-mono">184+ Advanced</div>
-          <p className="text-[11px] text-rose-700 dark:text-rose-400 mt-1 font-medium">430+ PG Fellow Dissertations</p>
         </div>
 
         <div className="liquid-glass-card rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-700 shadow-sm bg-white/80 dark:bg-slate-800/80">
@@ -176,7 +166,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700'
           }`}
         >
-          <GraduationCap className="w-4 h-4" />
+          <Award className="w-4 h-4" />
           <span>Faculty & Trainee Academic Dossiers</span>
         </button>
 

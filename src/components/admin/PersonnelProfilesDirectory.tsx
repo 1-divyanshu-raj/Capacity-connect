@@ -41,7 +41,7 @@ export const PersonnelProfilesDirectory: React.FC = () => {
   // Aggregates for the executive stat cards
   const totalTrainers = MOCK_PERSONNEL_DIRECTORY.filter(p => p.role === 'trainer').length;
   const totalTrainees = MOCK_PERSONNEL_DIRECTORY.filter(p => p.role === 'trainee').length;
-  const totalThesesSupervised = MOCK_PERSONNEL_DIRECTORY.reduce((acc, p) => acc + (p.thesesSupervisedCount || 0), 0);
+  const totalPapers = MOCK_PERSONNEL_DIRECTORY.reduce((acc, p) => acc + (p.researchPapersCount || 0), 0);
   const totalMentoredStudents = MOCK_PERSONNEL_DIRECTORY.reduce((acc, p) => acc + (p.studentsMentoredCount || 0), 0);
 
   return (
@@ -57,18 +57,18 @@ export const PersonnelProfilesDirectory: React.FC = () => {
             Trainer & Trainee Academic Dossiers
           </h2>
           <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
-            Comprehensive directory of MoES research faculty, senior research supervisors, and trainee scientists. Review supervised theses, research citations, and student mentorship metrics.
+            Comprehensive directory of MoES research faculty, scientific trainers, and trainee scientists. Track institutional affiliations, published citations, and mentorship metrics.
           </p>
         </div>
 
         {/* Executive High-Volume Metric Counters */}
         <div className="grid grid-cols-2 gap-3 shrink-0">
           <div className="p-3.5 rounded-2xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700 shadow-sm text-center min-w-[140px]">
-            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block">Supervised Theses</span>
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 block">Research Papers</span>
             <span className="text-2xl font-black text-rose-600 dark:text-rose-400 font-mono">
-              {totalThesesSupervised}+ Research
+              {totalPapers}+ Published
             </span>
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 block">Senior Research Submissions</span>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 block">Peer-Reviewed Publications</span>
           </div>
 
           <div className="p-3.5 rounded-2xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700 shadow-sm text-center min-w-[140px]">
@@ -167,9 +167,9 @@ export const PersonnelProfilesDirectory: React.FC = () => {
                   <div className="space-y-2 mb-4">
                     <div className="grid grid-cols-2 gap-2 text-center">
                       <div className="p-2 rounded-xl bg-rose-50/70 dark:bg-rose-950/40 border border-rose-100 dark:border-rose-900/60">
-                        <span className="text-[10px] text-rose-700 dark:text-rose-300 block font-semibold">Theses Supervised</span>
+                        <span className="text-[10px] text-rose-700 dark:text-rose-300 block font-semibold">Research Papers</span>
                         <span className="text-base font-black text-rose-900 dark:text-rose-200 font-mono">
-                          {person.thesesSupervisedCount} Research
+                          {person.researchPapersCount} Published
                         </span>
                       </div>
                       <div className="p-2 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/60">
@@ -301,8 +301,8 @@ export const PersonnelProfilesDirectory: React.FC = () => {
                 <div className="space-y-3">
                   <div className="grid grid-cols-3 gap-2 text-center">
                     <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900">
-                      <span className="text-[10px] text-rose-700 dark:text-rose-300 block font-semibold">Research Theses</span>
-                      <span className="text-xl font-black text-rose-900 dark:text-rose-100 font-mono">{selectedPerson.thesesSupervisedCount}</span>
+                      <span className="text-[10px] text-rose-700 dark:text-rose-300 block font-semibold">Research Papers</span>
+                      <span className="text-xl font-black text-rose-900 dark:text-rose-100 font-mono">{selectedPerson.researchPapersCount}</span>
                     </div>
                     <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900">
                       <span className="text-[10px] text-emerald-700 dark:text-emerald-300 block font-semibold">Mentored Trainees</span>
@@ -317,7 +317,7 @@ export const PersonnelProfilesDirectory: React.FC = () => {
                   <div>
                     <h4 className="font-bold text-slate-900 dark:text-white text-xs mb-1.5 flex items-center gap-1.5">
                       <GraduationCap className="w-4 h-4 text-rose-600" />
-                      <span>Senior Research Theses Supervised</span>
+                      <span>Senior Research Projects Supervised</span>
                     </h4>
                     <ul className="space-y-1.5 pl-2">
                       {selectedPerson.thesesDetails?.map((thesis, i) => (

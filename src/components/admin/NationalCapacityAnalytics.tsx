@@ -66,8 +66,8 @@ export const NationalCapacityAnalytics: React.FC = () => {
           </div>
           <div className="w-px h-10 bg-slate-200 dark:bg-slate-700" />
           <div>
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">Research Theses</span>
-            <span className="text-2xl font-black text-rose-600 dark:text-rose-400 font-mono">184</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">Certified Officers</span>
+            <span className="text-2xl font-black text-rose-600 dark:text-rose-400 font-mono">3,420+</span>
           </div>
         </div>
       </div>
@@ -326,7 +326,7 @@ export const NationalCapacityAnalytics: React.FC = () => {
               <PieIcon className="w-4 h-4 text-rose-600 dark:text-rose-400" />
               <span>Subject Domain Share</span>
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Distribution of active trainees & research theses</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Distribution of active trainees & institutional cohorts</p>
           </div>
 
           {/* High-Contrast Donut Chart */}
@@ -397,7 +397,7 @@ export const NationalCapacityAnalytics: React.FC = () => {
                 <th className="py-3.5 px-4">Specialization Domain</th>
                 <th className="py-3.5 px-4 text-center">Certified Staff</th>
                 <th className="py-3.5 px-4 text-center">Readiness</th>
-                <th className="py-3.5 px-4 text-center">Research Theses</th>
+                <th className="py-3.5 px-4 text-center">Active Fellows</th>
                 <th className="py-3.5 px-4">iGOT API Sync Status</th>
                 <th className="py-3.5 px-5 text-right">Last API Sync</th>
               </tr>
@@ -434,7 +434,7 @@ export const NationalCapacityAnalytics: React.FC = () => {
                     </div>
                   </td>
                   <td className="py-4 px-4 text-center font-mono font-semibold text-slate-700 dark:text-slate-300">
-                    {inst.theses} ({inst.activeFellows} Fellows)
+                    {inst.activeFellows} Fellows
                   </td>
                   <td className="py-4 px-4">
                     {inst.igotSyncStatus === 'Synced' ? (

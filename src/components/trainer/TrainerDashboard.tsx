@@ -18,7 +18,6 @@ import { AIAssessmentGenerator } from './AIAssessmentGenerator';
 import { CompetencyMapping } from './CompetencyMapping';
 import { TraineeAnalytics } from './TraineeAnalytics';
 import { TrainerCoursesView } from './TrainerCoursesView';
-import { ResearchThesesSupervision } from './ResearchThesesSupervision';
 import { PresentationReviewSuite } from './PresentationReviewSuite';
 import { AssignmentAutoGradingEngine } from './AssignmentAutoGradingEngine';
 import { 
@@ -30,7 +29,6 @@ import {
   Award, 
   Users,
   Compass,
-  GraduationCap,
   Video,
   Cpu
 } from 'lucide-react';
@@ -66,7 +64,7 @@ export const TrainerDashboard: React.FC<TrainerDashboardProps> = ({
   onUpdatePresentationSubmission = () => {},
   onSignOut,
 }) => {
-  const [activeTab, setActiveTab] = useState<'courses' | 'theses' | 'presentations' | 'autograde' | 'library' | 'generator' | 'competency' | 'analytics'>('presentations');
+  const [activeTab, setActiveTab] = useState<'presentations' | 'autograde' | 'courses' | 'library' | 'generator' | 'competency' | 'analytics'>('presentations');
 
   const totalEnrolledInCourses = courses.reduce((sum, c) => sum + c.enrolledCount, 0);
   const pendingPresentations = presentationSubmissions.filter((p) => p.status === 'Submitted - In Review').length;
@@ -76,7 +74,7 @@ export const TrainerDashboard: React.FC<TrainerDashboardProps> = ({
     <div className="min-h-[calc(100vh-80px)] p-3 sm:p-6 lg:p-8 space-y-6 sm:space-y-8 max-w-7xl mx-auto max-w-full overflow-x-hidden">
       
       {/* Overview Stat Cards with High Organizational Scaling */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="liquid-glass-card rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-700 shadow-sm bg-white/80 dark:bg-slate-800/80">
           <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
             <span className="text-xs font-semibold">Instructional Courses</span>
@@ -102,15 +100,6 @@ export const TrainerDashboard: React.FC<TrainerDashboardProps> = ({
           </div>
           <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono">{assignmentSubmissions.length} Tasks</div>
           <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-1 font-medium">{pendingAssignments} queued on PARAM Mihir</p>
-        </div>
-
-        <div className="liquid-glass-card rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-700 shadow-sm bg-white/80 dark:bg-slate-800/80">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
-            <span className="text-xs font-semibold">Supervised Theses</span>
-            <GraduationCap className="w-4 h-4 text-amber-500" />
-          </div>
-          <div className="text-2xl font-black text-amber-600 dark:text-amber-400 font-mono">14 Scholars</div>
-          <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1 font-medium">184+ Senior Research Projects</p>
         </div>
       </div>
 
@@ -161,20 +150,6 @@ export const TrainerDashboard: React.FC<TrainerDashboardProps> = ({
         >
           <BookOpen className="w-4 h-4" />
           <span>Courses ({courses.length})</span>
-        </button>
-
-        <button
-          id="trainer-tab-theses"
-          type="button"
-          onClick={() => setActiveTab('theses')}
-          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-            activeTab === 'theses'
-              ? 'bg-slate-900 dark:bg-rose-600 text-white shadow-sm'
-              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700'
-          }`}
-        >
-          <GraduationCap className="w-4 h-4" />
-          <span>Theses (14)</span>
         </button>
 
         <button
@@ -254,10 +229,6 @@ export const TrainerDashboard: React.FC<TrainerDashboardProps> = ({
 
       {activeTab === 'courses' && (
         <TrainerCoursesView courses={courses} />
-      )}
-
-      {activeTab === 'theses' && (
-        <ResearchThesesSupervision />
       )}
 
       {activeTab === 'library' && (
