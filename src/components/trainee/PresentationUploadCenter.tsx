@@ -18,6 +18,7 @@ import {
   Info
 } from 'lucide-react';
 import { sound } from '../../utils/soundEffects';
+import { checkUpload, safeLine, secureId, UPLOAD_RULES } from '../../lib/security';
 
 interface PresentationUploadCenterProps {
   traineeName: string;
@@ -55,9 +56,26 @@ export const PresentationUploadCenter: React.FC<PresentationUploadCenterProps> =
     'Agricultural Meteorology & District Forecast Advisory'
   ];
 
+  // Seminar media types declared by the `accept` attribute, enforced in code:
+  // the attribute alone is trivially bypassed by a drag & drop or a proxy.
+  const PRESENTATION_EXTENSIONS = ['.mp4', '.webm', '.pdf', '.pptx'];
+
+  const acceptFile = (file: File | undefined | null): File | null => {
+    if (!file) return null;
+    const verdict = checkUpload(file, { allowedExtensions: PRESENTATION_EXTENSIONS, maxBytes: UPLOAD_RULES.maxBytes });
+    if (!verdict.ok) {
+      alert(verdict.reason ?? 'That file cannot be accepted.');
+      return null;
+    }
+    return file;
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setSelectedFile(e.target.files[0]);
+      const accepted = acceptFile(e.target.files[0]);
+      if (accepted) setSelectedFile(accepted);
+      // Allow re-picking the same file after a rejected attempt.
+      e.target.value = '';
     }
   };
 
@@ -76,7 +94,7 @@ export const PresentationUploadCenter: React.FC<PresentationUploadCenterProps> =
       setUploadProgress(100);
 
       const newPres: PresentationSubmission = {
-        id: `pres-${Date.now().toString().slice(-4)}`,
+        id: secureId('pres', 4).toLowerCase(),
         title,
         seminarTopic,
         courseTitle,
@@ -203,10 +221,11 @@ export const PresentationUploadCenter: React.FC<PresentationUploadCenterProps> =
                   type="text"
                   required
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => setTitle(e.target.value.slice(0, 160))}
                   placeholder="e.g., Kalbaishakhi Severe Squall Line Radar Inversion"
                   className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
+                  maxLength={160}
+                  />
               </div>
 
               <div className="space-y-1">
@@ -217,10 +236,11 @@ export const PresentationUploadCenter: React.FC<PresentationUploadCenterProps> =
                   type="text"
                   required
                   value={seminarTopic}
-                  onChange={(e) => setSeminarTopic(e.target.value)}
+                  onChange={(e) => setSeminarTopic(e.target.value.slice(0, 160))}
                   placeholder="e.g., Doppler Radar Clutter Filtering"
                   className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
+                  maxLength={160}
+                  />
               </div>
 
               <div className="space-y-1">
@@ -269,10 +289,11 @@ export const PresentationUploadCenter: React.FC<PresentationUploadCenterProps> =
                 <input
                   type="text"
                   value={durationOrPages}
-                  onChange={(e) => setDurationOrPages(e.target.value)}
+                  onChange={(e) => setDurationOrPages(e.target.value.slice(0, 240))}
                   placeholder="e.g. 14 mins (1080p) or 26 slides"
                   className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
+                  maxLength={240}
+                  />
               </div>
 
               <div className="space-y-1 sm:col-span-2">
@@ -282,10 +303,11 @@ export const PresentationUploadCenter: React.FC<PresentationUploadCenterProps> =
                 <textarea
                   rows={2}
                   value={summary}
-                  onChange={(e) => setSummary(e.target.value)}
+                  onChange={(e) => setSummary(e.target.value.slice(0, 240))}
                   placeholder="Brief description of the observational methods, data sources, and findings demonstrated in this presentation..."
                   className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500 resize-none"
-                />
+                  maxLength={240}
+                  />
               </div>
 
             </div>

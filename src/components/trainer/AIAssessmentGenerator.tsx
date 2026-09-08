@@ -13,6 +13,8 @@ import {
   Plus,
   AlertCircle
 } from 'lucide-react';
+import { apiRequest } from '../../lib/api';
+import { safeText, secureId, FIELD_LIMITS } from '../../lib/security';
 
 interface AIAssessmentGeneratorProps {
   onPublishAssessment: (assessment: Assessment) => void;
@@ -39,25 +41,45 @@ export const AIAssessmentGenerator: React.FC<AIAssessmentGeneratorProps> = ({
     setStatusMessage('Generating 5 rigorous subject-wise MCQs with automated scientific rationales...');
 
     try {
-      const response = await fetch('/api/gemini/generate-mcqs', {
+      const result = await apiRequest<Record<string, unknown>>('/api/gemini/generate-mcqs', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic,
-          lessonText,
+        body: {
+          topic: safeText(topic, FIELD_LIMITS.topic),
+          lessonText: safeText(lessonText, FIELD_LIMITS.lessonText),
           difficulty: 'Intermediate to Advanced',
-        }),
+        },
+        timeoutMs: 45_000,
       });
+      if (!result.ok) throw new Error(result.error?.message || 'Generation unavailable');
 
-      const data = await response.json();
-      if (data.questions && data.questions.length > 0) {
-        setGeneratedQuestions(data.questions);
+      // Server payloads are re-shaped defensively on the client too: only known
+      // fields, bounded counts and bounded strings may enter component state.
+      const data = (result.data ?? {}) as { questions?: unknown };
+      const questions = Array.isArray(data.questions)
+        ? data.questions.slice(0, 25).map((entry, index) => {
+            const item = (entry ?? {}) as Record<string, unknown>;
+            const options = Array.isArray(item.options)
+              ? item.options.slice(0, 8).map((option) => safeText(option, 400))
+              : [];
+            const rawIndex = Number.isFinite(Number(item.correctIndex)) ? Number(item.correctIndex) : -1;
+            return {
+              id: safeText(item.id, 48) || `q-gen-${index + 1}`,
+              question: safeText(item.question, 1_500),
+              options,
+              correctIndex: rawIndex >= 0 && rawIndex < options.length ? Math.trunc(rawIndex) : 0,
+              explanation: safeText(item.explanation, 2_000),
+              difficulty: safeText(item.difficulty, 48) || 'Intermediate',
+            } as MCQQuestion;
+          })
+        : [];
+      if (questions.length > 0) {
+        setGeneratedQuestions(questions);
         setStatusMessage('Successfully generated 5 examination questions based on your curriculum text!');
       } else {
         throw new Error('No questions returned');
       }
     } catch (err) {
-      console.error('Error generating MCQs:', err);
+      // Offline or upstream failure: the curated fallback set below is served.
       // Fallback curated questions if Gemini offline
       const fallbackQuestions: MCQQuestion[] = [
         {
@@ -137,7 +159,7 @@ export const AIAssessmentGenerator: React.FC<AIAssessmentGeneratorProps> = ({
     if (generatedQuestions.length === 0) return;
 
     const newAssessment: Assessment = {
-      id: `asm-${Date.now()}`,
+      id: secureId('asm', 8),
       courseId: 'c1',
       courseTitle: topic,
       title: `${topic} - Master Certification`,
@@ -182,9 +204,10 @@ export const AIAssessmentGenerator: React.FC<AIAssessmentGeneratorProps> = ({
               id="ai-assessment-topic-input"
               type="text"
               value={topic}
-              onChange={(e) => setTopic(e.target.value)}
+              onChange={(e) => setTopic(e.target.value.slice(0, 160))}
               className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/90 text-xs font-medium text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-rose-500 outline-none"
-            />
+              maxLength={160}
+              />
           </div>
 
           <div className="space-y-1.5">
@@ -243,9 +266,10 @@ export const AIAssessmentGenerator: React.FC<AIAssessmentGeneratorProps> = ({
             id="ai-assessment-lesson-textarea"
             rows={5}
             value={lessonText}
-            onChange={(e) => setLessonText(e.target.value)}
+            onChange={(e) => setLessonText(e.target.value.slice(0, 4000))}
             className="w-full px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-800/90 text-xs text-slate-800 dark:text-slate-100 leading-relaxed focus:ring-2 focus:ring-rose-500 outline-none"
-          />
+            maxLength={4000}
+            />
         </div>
 
         {/* Generate Button */}

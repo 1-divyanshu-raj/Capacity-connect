@@ -1,9 +1,25 @@
+# dependencies / build output
 node_modules/
 build/
 dist/
 coverage/
-.DS_Store
+
+# logs & local tooling caches
 *.log
+.DS_Store
+Thumbs.db
+node_modules/.cache/
+
+# --- security: never commit local state, secrets, or scan output ---
+.env.*
 .env
 !.env.example
-.env.local
+*.pem
+*.key
+*.p12
+*.pfx
+.npmrc
+.vercel
+.secrets
+*.sarif
+*.report.json

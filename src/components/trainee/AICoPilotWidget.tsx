@@ -1,4 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { apiRequest } from '../../lib/api';
+import { safeText, FIELD_LIMITS, formatRetry } from '../../lib/security';
+import { secureId } from '../../lib/security';
 import { 
   Bot, 
   X, 
@@ -62,7 +65,7 @@ export const AICoPilotWidget: React.FC<AICoPilotWidgetProps> = ({ currentCourseT
     if (!text || isLoading) return;
 
     const userMsg: Message = {
-      id: `user-${Date.now()}`,
+      id: secureId('msg', 8).toLowerCase(),
       sender: 'user',
       text,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -73,31 +76,42 @@ export const AICoPilotWidget: React.FC<AICoPilotWidgetProps> = ({ currentCourseT
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/gemini/chat', {
+      // Same-origin, credentialed, CSRF-protected and length-capped request.
+      const result = await apiRequest<{ reply?: string; source?: string }>('/api/gemini/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          contextCourse: currentCourseTitle || 'MoES Earth Sciences Curriculum',
-        }),
+        body: {
+          message: safeText(text, FIELD_LIMITS.chatMessage),
+          contextCourse: safeText(currentCourseTitle || 'MoES Earth Sciences Curriculum', 240),
+        },
+        timeoutMs: 30_000,
       });
 
-      const data = await response.json();
-      const reply = data.reply || 'I analyzed the MoES knowledge base and updated your study notes.';
+      if (!result.ok) {
+        const reason = result.error.status === 429
+          ? `Study assistant is rate limited to protect portal quota. Try again in ${formatRetry(result.error.retryAfterSeconds)}.`
+          : result.error.message;
+        throw new Error(reason);
+      }
+
+      const data = result.data ?? {};
+      // Upstream text is treated as data: control/zero-width characters are
+      // stripped and the length is bounded before it enters component state.
+      const reply = safeText(data.reply, 20_000) || 'I analyzed the MoES knowledge base and updated your study notes.';
 
       const botMsg: Message = {
-        id: `bot-${Date.now()}`,
+        id: secureId('msg', 8).toLowerCase(),
         sender: 'assistant',
         text: reply,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        source: data.source || 'gemini-3.8-flash',
+        source: safeText(data.source, 64) || 'gemini-3.8-flash',
       };
 
       setMessages((prev) => [...prev, botMsg]);
     } catch (err) {
-      console.error('Co-pilot error:', err);
+      // Offline / rate limited / upstream failure: serve the cached briefing.
+
       const errorMsg: Message = {
-        id: `bot-${Date.now()}`,
+        id: secureId('msg', 8).toLowerCase(),
         sender: 'assistant',
         text: 'Doppler Radar Principles: Reflectivity Factor Z measures backscattered power proportional to ΣD^6. Convective storms in IMD radars typically show Z > 45 dBZ with severe hail at > 55 dBZ.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -228,9 +242,10 @@ export const AICoPilotWidget: React.FC<AICoPilotWidgetProps> = ({ currentCourseT
               type="text"
               placeholder="Ask about Doppler radar, WRF equations..."
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={(e) => setInputText(e.target.value.slice(0, FIELD_LIMITS.chatMessage))}
               className="flex-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-rose-500"
-            />
+              maxLength={4000}
+              />
             <button
               id="copilot-send-query-btn"
               type="submit"

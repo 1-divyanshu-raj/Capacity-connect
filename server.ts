@@ -1,261 +1,513 @@
-import express from 'express';
-import path from 'path';
+/**
+ * CAPACITY CONNECT - hardened portal server.
+ *
+ * Functionality is unchanged (same routes, same payloads, same UI); this file
+ * now composes a defence-in-depth pipeline in front of it:
+ *
+ *   transport guards -> request id -> security headers / CSP (nonces) ->
+ *   path & method allowlists -> bounded body parsing -> rate limiting /
+ *   lockout -> session + CSRF -> role authorisation -> validated handlers ->
+ *   generic error envelope -> audit trail.
+ *
+ * The AI handler bodies live in `server/routes/ai.ts`, authentication in
+ * `server/security/auth.ts`, and every knob is resolved once in
+ * `server/config.ts`. No third-party security middleware is required, which
+ * keeps the dependency graph (and therefore its CVE surface) minimal.
+ */
+import express, { type NextFunction, type Request as ExRequest, type Response as ExResponse } from 'express';
+import http from 'node:http';
+import path from 'node:path';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI, Type } from '@google/genai';
-import dotenv from 'dotenv';
+import { getConfig } from './server/config';
+import { AuditLog, audit } from './server/security/audit';
+import { AuthService, type AuthOptions } from './server/security/auth';
+import { randomToken } from './server/security/crypto';
+import {
+  extensionOf,
+  isPathSafe,
+  securityHeaders,
+  SERVEABLE_EXTENSIONS,
+} from './server/security/headers';
+import { clientIp, createRateLimiter, sessionAwareKey, tokenBucketMiddleware } from './server/security/ratelimit';
+import { attachSession, rejectCrossOriginApi, requireCsrf, SessionManager } from './server/security/session';
+import { assertShallow, ValidationError } from './server/security/validate';
+import { createAiRouter } from './server/routes/ai';
+import { createAuthRouter } from './server/routes/auth';
+import { createCertificateRouter } from './server/routes/certificates';
+import { createSecurityRouter } from './server/routes/security';
+import type { ApiContext } from './server/routes/context';
+import { HtmlShell, sendHtml } from './server/html';
 
-dotenv.config();
+const config = getConfig();
 
+/* -------------------------------------------------------------------------- */
+/* bootstrap                                                                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The Vite middleware (unbundled sources, HMR websocket) is only ever mounted
+ * when the process is *not* running the production bundle. `DEV_SERVER=true`
+ * forces it for tooling; the bundle switch alone is enough for the default
+ * `npm start` path, so a missing NODE_ENV cannot expose source.
+ */
+const devForced = ['true', '1', 'yes'].includes((process.env.DEV_SERVER ?? '').trim().toLowerCase());
+const useViteDev = devForced || !config.isProduction;
 const app = express();
-const PORT = 3000;
 
-app.use(express.json());
+// Never advertise the framework or the runtime.
+app.disable('x-powered-by');
+app.disable('etag');
+// `simple` keeps the query string parser out of `qs`' nested-object mode,
+// closing the prototype-pollution / deep-object DoS class at the framework level.
+app.set('query parser', 'simple');
+app.set('trust proxy', config.trustProxy);
+app.set('case sensitive routing', false);
 
-// Shared Gemini client lazy initializer
-let genAI: GoogleGenAI | null = null;
-function getGeminiClient(): GoogleGenAI | null {
-  if (!process.env.GEMINI_API_KEY) {
-    return null;
+const log = new AuditLog(config.auditRingSize, config.logLevel);
+const sessions = new SessionManager({
+  secret: config.secret,
+  cookieName: config.sessionCookieName,
+  csrfCookieName: config.csrfCookieName,
+  idleMs: config.sessionIdleMinutes * 60_000,
+  absoluteMs: config.sessionAbsoluteHours * 3_600_000,
+  secure: config.enforceSecureCookies,
+  maxSessions: Math.min(config.maxTrackedKeys, 50_000),
+});
+const auth = new AuthService({
+  demoMode: config.demoMode,
+  credentials: config.credentials,
+  demoOtp: config.demoOtp,
+  otpTtlSeconds: config.otpTtlSeconds,
+  otpMaxAttempts: config.otpMaxAttempts,
+  passwordMinLength: config.passwordMinLength,
+  secret: config.secret,
+  rateLimit: config.rateLimit,
+  maxTrackedKeys: config.maxTrackedKeys,
+} satisfies AuthOptions);
+
+const limiters = {
+  global: createRateLimiter({
+    name: 'global',
+    windowMs: config.rateLimit.global.windowMs,
+    max: config.rateLimit.global.max,
+    maxKeys: config.maxTrackedKeys,
+    skip: (req) => req.path === '/api/health',
+  }),
+  auth: createRateLimiter({
+    name: 'auth',
+    windowMs: config.rateLimit.auth.windowMs,
+    max: config.rateLimit.auth.max,
+    maxKeys: config.maxTrackedKeys,
+    message: 'Too many authentication attempts for this window. Wait a moment before retrying.',
+  }),
+  aiChat: createRateLimiter({
+    name: 'ai-chat',
+    windowMs: config.rateLimit.aiChat.windowMs,
+    max: config.rateLimit.aiChat.max,
+    maxKeys: config.maxTrackedKeys,
+    key: sessionAwareKey(config.secret),
+  }),
+  mcq: createRateLimiter({
+    name: 'ai-mcq',
+    windowMs: config.rateLimit.mcq.windowMs,
+    max: config.rateLimit.mcq.max,
+    maxKeys: config.maxTrackedKeys,
+    key: sessionAwareKey(config.secret),
+  }),
+  certificate: createRateLimiter({
+    name: 'certificate',
+    windowMs: config.rateLimit.certificate.windowMs,
+    max: config.rateLimit.certificate.max,
+    maxKeys: config.maxTrackedKeys,
+    key: sessionAwareKey(config.secret),
+  }),
+  security: createRateLimiter({
+    name: 'security',
+    windowMs: config.rateLimit.global.windowMs,
+    max: 120,
+    maxKeys: config.maxTrackedKeys,
+  }),
+};
+
+const ctx: ApiContext = {
+  config,
+  sessions,
+  auth,
+  log,
+  limiters,
+  requireCsrf: requireCsrf({ manager: sessions, csrfCookieName: config.csrfCookieName, isProduction: config.isProduction }),
+  attachSession: attachSession({ manager: sessions, csrfCookieName: config.csrfCookieName }),
+};
+
+/* -------------------------------------------------------------------------- */
+/* request plumbing                                                           */
+/* -------------------------------------------------------------------------- */
+
+/** Correlation id + arrival timestamp for every request (logs and responses). */
+app.use((req: ExRequest, res: ExResponse, next: NextFunction) => {
+  req.startedAt = Date.now();
+  const incoming = req.headers['x-request-id'];
+  req.requestId =
+    typeof incoming === 'string' && /^[A-Za-z0-9._-]{8,64}$/.test(incoming) ? incoming : randomToken(8);
+  req.clientIp = clientIp(req);
+  req.validated = {};
+  next();
+});
+
+app.use(securityHeaders(config, { isProduction: !useViteDev }));
+
+/** Only the verbs the portal actually implements. */
+const ALLOWED_METHODS = new Set(['GET', 'HEAD', 'POST', 'OPTIONS']);
+app.use((req: ExRequest, res: ExResponse, next: NextFunction) => {
+  if (ALLOWED_METHODS.has(req.method)) return next();
+  log.log('input.rejected', `Unsupported HTTP method ${req.method}`, { req, severity: 'warning' });
+  res.setHeader('Allow', 'GET, HEAD, POST, OPTIONS');
+  res.status(405).json({ error: 'Method not allowed', requestId: req.requestId });
+  return undefined;
+});
+
+/** Header-size and control-character gate for the raw request line. */
+app.use((req: ExRequest, res: ExResponse, next: NextFunction) => {
+  const rawUrl = req.originalUrl || req.url || '';
+  if (rawUrl.length > 2_048) {
+    res.status(414).json({ error: 'Request URI too long', requestId: req.requestId });
+    return;
   }
-  if (!genAI) {
-    genAI = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
+  if (Object.keys(req.headers).length > 40) {
+    res.status(431).json({ error: 'Too many request headers', requestId: req.requestId });
+    return;
+  }
+  const userAgent = req.headers['user-agent'];
+  if (typeof userAgent === 'string' && userAgent.length > 512) {
+    // Truncate rather than reject: some proxies append large markers.
+    req.headers['user-agent'] = userAgent.slice(0, 512);
+  }
+  next();
+});
+
+/** Path allowlist for everything that is not an API call. */
+app.use((req: ExRequest, res: ExResponse, next: NextFunction) => {
+  if (req.path.startsWith('/api/')) return next();
+  const check = isPathSafe(req.path, { allowSource: useViteDev });
+  if (!check.ok) {
+    log.log('path.blocked', `Blocked request path (${check.reason})`, { req, severity: 'warning', meta: { path: req.path.slice(0, 200) } });
+    res.status(check.status === 200 ? 404 : check.status).json({ error: 'Not found', requestId: req.requestId });
+    return;
+  }
+  next();
+});
+
+/**
+ * Bounded, hardened JSON body parsing.
+ *
+ * - `Content-Type` must be exactly application/json (no form/text smuggling),
+ * - the payload is capped at `config.bodyLimitBytes` (default 32 KB),
+ * *after* an untrusted-length check on the raw stream,
+ * - `__proto__` / `constructor` keys are dropped (prototype pollution),
+ * - nesting and array breadth are bounded (parser DoS / memory amplification).
+ */
+app.use(
+  express.json({
+    limit: config.bodyLimitBytes,
+    type: (req) => /^application\/json\s*(;|$)/i.test(String(req.headers['content-type'] ?? '').trim()),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    reviver(this: unknown, key: string, value: any) {
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') return undefined;
+      if (typeof value === 'string' && value.length > 400_000) return value.slice(0, 400_000);
+      return value;
+    },
+    strict: true,
+  }),
+);
+
+/** Rejects structurally hostile bodies before any handler sees them. */
+app.use((req: ExRequest, res: ExResponse, next: NextFunction) => {
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
+  if (req.is('application/json') === false && req.method !== 'OPTIONS') {
+    res.setHeader('Accept', 'application/json');
+    res.status(415).json({ error: 'Content-Type must be application/json', code: 'unsupported_media_type', requestId: req.requestId });
+    return;
+  }
+  if (req.body !== undefined && !assertShallow(req.body)) {
+    log.log('input.rejected', 'Rejected deeply nested or oversized JSON payload', { req, severity: 'warning' });
+    res.status(400).json({ error: 'Payload structure is not supported', code: 'payload_shape', requestId: req.requestId });
+    return;
+  }
+  next();
+});
+
+/** Access logging without secrets: method, route shape, status, latency. */
+app.use((req: ExRequest, res: ExResponse, next: NextFunction) => {
+  if (!req.path.startsWith('/api/')) return next();
+  res.on('finish', () => {
+    const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'notice' : 'info';
+    if (config.logLevel === 'silent' || config.logLevel === 'error') return;
+    if (level === 'info' && config.logLevel !== 'debug' && config.logLevel !== 'info') return;
+    log.log('http.request', `${req.method} ${req.path.split('?')[0]} ${res.statusCode}`, {
+      req,
+      severity: level,
+      meta: { ms: Date.now() - (req.startedAt || Date.now()) },
     });
-  }
-  return genAI;
-}
-
-// 1. Health check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    portal: 'CAPACITY CONNECT - MoES / IMD',
-    hasGeminiKey: !!process.env.GEMINI_API_KEY,
   });
+  next();
 });
 
-// 2. Trainee AI Co-Pilot Chat
-app.post('/api/gemini/chat', async (req, res) => {
-  try {
-    const { message, contextCourse, history } = req.body;
+/* -------------------------------------------------------------------------- */
+/* API surface                                                                */
+/* -------------------------------------------------------------------------- */
 
-    if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
-    }
-
-    const ai = getGeminiClient();
-
-    if (ai) {
-      try {
-        const systemInstruction = `You are "MoES Earth Co-Pilot", an authoritative AI study assistant for trainee scientists and meteorologists in the Ministry of Earth Sciences (MoES), India Meteorological Department (IMD), NCMRWF, INCOIS, and IITM.
-Your knowledge covers Radar Meteorology (Doppler weather radars, dual-polarization, reflectivity dBZ, radial velocity, hydrometeor classification), Seismology (earthquake epicenters, Gutenberg-Richter law, tsunami early warning systems by INCOIS Hyderabad), Numerical Weather Prediction (WRF model, GFS, 4D-Var data assimilation), and Ocean-Atmosphere Dynamics (Indian Ocean Dipole, Monsoon low pressure systems, Tropical Cyclones over Bay of Bengal/Arabian Sea).
-Provide accurate, concise, pedagogical answers with scientific precision and practical operational context for Indian Earth Sciences. Format your responses with clear markdown, bullet points, and practical equations if relevant.`;
-
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: `Topic Context: ${contextCourse || 'Earth Sciences & Meteorology'}\nTrainee Question: ${message}`,
-          config: {
-            systemInstruction,
-            temperature: 0.6,
-          },
-        });
-
-        const reply = response.text;
-        if (reply) {
-          return res.json({ reply, source: 'gemini-3.8-flash' });
-        }
-      } catch (geminiErr) {
-        console.warn('Gemini API call failed, using Earth Sciences knowledge base:', geminiErr);
-      }
-    }
-
-    // High quality domain-specific fallback responses
-    const lower = message.toLowerCase();
-    let reply = '';
-
-    if (lower.includes('radar') || lower.includes('doppler') || lower.includes('reflectivity') || lower.includes('dbz')) {
-      reply = `### Doppler Weather Radar (DWR) Operational Principles\n\n- **Reflectivity Factor ($Z$ / dBZ):** Measures backscattered energy proportional to $\\sum D^6$ (Rayleigh scattering regime). Values $>45$ dBZ typically indicate convective rainfall, while $>55$ dBZ suggests severe thunderstorms or hail.\n- **Dual-Polarization Parameters:**\n  - **Differential Reflectivity ($Z_{DR}$):** Distinguishes oblate raindrops from spherical hailstones.\n  - **Specific Differential Phase ($K_{DP}$):** Unaffected by radar beam attenuation; vital for heavy tropical precipitation estimation.\n  - **Correlation Coefficient ($\\rho_{HV}$):** Discriminates meteorological echoes from non-meteorological clutter (birds, insects, sea clutter).\n- **IMD Network:** India operates over 37 C-band, S-band, and X-band Doppler radars across coastal and inland regions to monitor cyclones and convective storms.`;
-    } else if (lower.includes('seism') || lower.includes('tsunami') || lower.includes('earthquake')) {
-      reply = `### Seismology & Tsunami Early Warning in MoES / INCOIS\n\n- **Primary (P) and Secondary (S) Waves:** P-waves are compressional longitudinal waves traveling at $\\approx 6-8\\text{ km/s}$ in the crust, while S-waves are shear transverse waves traveling at $\\approx 3.5-4.5\\text{ km/s}$.\n- **Indian Tsunami Early Warning Centre (ITEWC) at INCOIS Hyderabad:**\n  - Monitors seismological networks, Bottom Pressure Recorders (BPRs), and coastal tide gauges across the Indian Ocean.\n  - Generates tsunami advisory bulletins within 10-15 minutes of an undersea earthquake of magnitude $M_w \\ge 6.5$.\n- **Focal Mechanism:** Computed using Moment Tensor Inversion to determine strike, dip, and rake along subduction zones (e.g., Andaman-Sumatra trench).`;
-    } else if (lower.includes('nwp') || lower.includes('wrf') || lower.includes('model') || lower.includes('forecast')) {
-      reply = `### Numerical Weather Prediction (NWP) Architecture\n\n- **Governing Equations:** NWP models solve primitive equations including the Navier-Stokes momentum equations, thermodynamic energy equation, continuity equation, and hydrostatic/non-hydrostatic balance.\n- **Data Assimilation (DA):** Uses High-Resolution 4D-Var / Ensemble Kalman Filter (EnKF) assimilating INSAT-3D/3DR radiances, Doppler radar wind profiles, and radiosonde observations.\n- **Operational Systems in India:**\n  - **NCMRWF Unified Model (NCUM):** Global model providing medium-range forecasts.\n  - **High-Resolution WRF (3 km / 1 km):** Run operationally at IMD for severe weather, western disturbances, and monsoon squalls.`;
-    } else {
-      reply = `### MoES Earth Sciences Trainee Advisory\n\nRegarding your question: **"${message}"**:\n\n1. **Core Concept:** In operational meteorology and oceanography, atmospheric processes must be analyzed through thermodynamics, radiative transfer, and fluid dynamics.\n2. **Practical Guideline:** Consult the MoES National Training Module repository for calibrated data tables, NetCDF grid files, and IMD standard operating procedures (SOPs).\n3. **Recommended Study:** Review Chapter 3 on Satellite & Radar Data Assimilation and examine real-time satellite imagery on the IMD Mausam & RAPID portals.`;
-    }
-
-    res.json({ reply, source: 'moes-domain-engine' });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Internal server error' });
+const api = express.Router();
+api.use(rejectCrossOriginApi(config.corsAllowedOrigins));
+api.use(limiters.global);
+api.use(ctx.attachSession);
+api.use((req: ExRequest, res: ExResponse, next: NextFunction) => {
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Allow', 'GET, HEAD, POST, OPTIONS');
+    res.status(204).end();
+    return;
   }
+  next();
 });
 
-// 3. AI Assessment Generator for Trainers
-app.post('/api/gemini/generate-mcqs', async (req, res) => {
-  try {
-    const { topic, sourceText, difficulty = 'Intermediate' } = req.body;
+// CSRF/origin enforcement for every state-changing API call (the token is only
+// required once a session exists, so sign-in itself stays reachable).
+api.use(ctx.requireCsrf);
 
-    if (!topic && !sourceText) {
-      return res.status(400).json({ error: 'Topic or source text is required' });
-    }
+api.use(createSecurityRouter(ctx));
+api.use('/auth', createAuthRouter(ctx));
+api.use('/certificates', createCertificateRouter(ctx));
+api.use(
+  createAiRouter({
+    config,
+    upstreamLimiter: tokenBucketMiddleware({
+      capacity: Math.max(3, Math.floor(config.rateLimit.aiChat.max / 2)),
+      refillPerMinute: config.rateLimit.aiChat.max,
+      name: 'gemini-budget',
+    }),
+  }),
+);
 
-    const ai = getGeminiClient();
-
-    if (ai) {
-      try {
-        const prompt = `Generate exactly 5 high-quality, professional multiple-choice questions (MCQs) for training meteorologists and earth scientists in the Ministry of Earth Sciences (MoES / IMD).
-Topic: ${topic || 'Earth Sciences & Operational Meteorology'}
-Difficulty: ${difficulty}
-${sourceText ? `Source Lesson Material:\n${sourceText}` : ''}
-
-Output strictly valid JSON with an array named "mcqs". Each item must have:
-- id: string
-- question: string
-- options: array of 4 distinct string choices
-- correctIndex: integer (0 to 3)
-- explanation: comprehensive technical explanation
-- difficulty: string ("Beginner", "Intermediate", or "Advanced")`;
-
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                mcqs: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      id: { type: Type.STRING },
-                      question: { type: Type.STRING },
-                      options: {
-                        type: Type.ARRAY,
-                        items: { type: Type.STRING },
-                      },
-                      correctIndex: { type: Type.INTEGER },
-                      explanation: { type: Type.STRING },
-                      difficulty: { type: Type.STRING },
-                    },
-                    required: ['id', 'question', 'options', 'correctIndex', 'explanation', 'difficulty'],
-                  },
-                },
-              },
-              required: ['mcqs'],
-            },
-          },
-        });
-
-        const parsed = JSON.parse(response.text || '{}');
-        if (parsed.mcqs && parsed.mcqs.length > 0) {
-          return res.json({ mcqs: parsed.mcqs, source: 'gemini-3.8-flash' });
-        }
-      } catch (geminiErr) {
-        console.warn('Gemini MCQ generation failed, falling back to Earth Sciences template generator:', geminiErr);
-      }
-    }
-
-    // Fallback dynamic MCQ generator tailored to topic
-    const targetTopic = topic || 'Meteorology & Earth Sciences';
-    const fallbackMCQs = [
-      {
-        id: `mcq-${Date.now()}-1`,
-        question: `In operational Doppler Weather Radar observation of ${targetTopic}, which polarimetric variable is primarily used to detect non-meteorological hydrometeors (such as chaff or biological scatterers)?`,
-        options: [
-          'Differential Reflectivity (Z_DR)',
-          'Specific Differential Phase (K_DP)',
-          'Cross-Correlation Coefficient (ρ_HV)',
-          'Doppler Velocity Spectrum Width',
-        ],
-        correctIndex: 2,
-        explanation: 'Cross-Correlation Coefficient (ρ_HV) drops significantly below 0.85-0.90 for non-meteorological scatterers, whereas meteorological precipitation typically maintains ρ_HV > 0.95.',
-        difficulty: 'Intermediate',
-      },
-      {
-        id: `mcq-${Date.now()}-2`,
-        question: `Which fundamental governing equation describes the conservation of momentum in atmospheric Numerical Weather Prediction (NWP) models?`,
-        options: [
-          'First Law of Thermodynamics',
-          'Navier-Stokes equation in a rotating reference frame',
-          'Hydrostatic approximation equation',
-          'Clapeyron-Clausius equation of phase change',
-        ],
-        correctIndex: 1,
-        explanation: 'The Navier-Stokes equations accounting for Coriolis force, pressure gradient force, gravity, and frictional dissipation govern momentum conservation in NWP systems.',
-        difficulty: 'Intermediate',
-      },
-      {
-        id: `mcq-${Date.now()}-3`,
-        question: `In seismological data analysis conducted by MoES/NCS, what does the Wadati diagram plot to calculate the origin time and Vp/Vs ratio?`,
-        options: [
-          'P-wave arrival time vs. Epicentral distance',
-          '(S - P) travel time interval vs. P-wave arrival time',
-          'Magnitude vs. Logarithm of seismic energy',
-          'Fourier amplitude spectrum vs. corner frequency',
-        ],
-        correctIndex: 1,
-        explanation: 'A Wadati diagram plots (Ts - Tp) on the y-axis against Tp on the x-axis. The x-intercept gives the exact earthquake origin time (T0) and the slope equals (Vp/Vs - 1).',
-        difficulty: 'Advanced',
-      },
-      {
-        id: `mcq-${Date.now()}-4`,
-        question: `During the Indian Summer Monsoon, which coupled oceanic-atmospheric phenomenon over the equatorial Indian Ocean directly modulates synoptic rainfall variability?`,
-        options: [
-          'North Atlantic Oscillation (NAO)',
-          'Indian Ocean Dipole (IOD) & Madden-Julian Oscillation (MJO)',
-          'Pacific Decadal Oscillation (PDO)',
-          'Arctic Sea Ice Thickness Anomaly',
-        ],
-        correctIndex: 1,
-        explanation: 'Positive Indian Ocean Dipole (IOD) events and active phases of the Madden-Julian Oscillation (MJO) significantly enhance convective precipitation over the Indian subcontinent.',
-        difficulty: 'Intermediate',
-      },
-      {
-        id: `mcq-${Date.now()}-5`,
-        question: `Which remote sensing satellite payload operated by ISRO/MoES provides hourly atmospheric soundings for temperature and moisture profiles over the Indian subcontinent?`,
-        options: [
-          'Cartosat-3 High Resolution Sensor',
-          'INSAT-3DR 19-Channel Sounder & 6-Channel Imager',
-          'RISAT-2B Synthetic Aperture Radar',
-          'Oceansat-1 Ocean Color Monitor only',
-        ],
-        correctIndex: 1,
-        explanation: 'INSAT-3D and INSAT-3DR geostationary satellites carry a 19-channel infrared sounder capable of vertical temperature and humidity profile retrievals crucial for IMD NWP assimilation.',
-        difficulty: 'Beginner',
-      },
-    ];
-
-    res.json({ mcqs: fallbackMCQs, source: 'moes-curriculum-generator' });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'MCQ generation failed' });
-  }
+// Anything else under /api is a deliberate 404 (never the SPA shell), so that
+// probing cannot confuse "route exists" with "route returns HTML".
+api.use((req: ExRequest, res: ExResponse) => {
+  res.status(404).json({ error: 'Endpoint not found', code: 'not_found', requestId: req.requestId });
 });
 
-// Vite middleware or static serving
-async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+app.use('/api', api);
+
+/* -------------------------------------------------------------------------- */
+/* client delivery                                                            */
+/* -------------------------------------------------------------------------- */
+
+const distPath = path.resolve(process.cwd(), 'dist');
+const shell = new HtmlShell(path.join(distPath, 'index.html'));
+
+async function startServer(): Promise<void> {
+  let server: http.Server | null = null;
+
+  if (useViteDev) {
+    /**
+     * Dev / preview mode: the Vite middleware is embedded, so it must be given
+     * the same boundaries the hardened production path enforces.
+     */
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        // Explicit host allowlist defeats DNS rebinding; wildcard is never used.
+        allowedHosts: config.allowedHosts,
+        fs: { strict: true, allow: [process.cwd()] },
+        cors: false,
+        // Honour the repo's DISABLE_HMR switch (see vite.config.ts) and otherwise
+        // inherit the configured HMR settings - never widen them here.
+        hmr: process.env.DISABLE_HMR === 'true' ? false : undefined,
+        watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      },
       appType: 'spa',
+      logLevel: 'warn',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+    if (!shell.exists()) {
+      log.log('config.warning', 'dist/index.html is missing - run `npm run build` before `npm start`', { severity: 'error' });
+    }
+    /**
+     * Production: hashed assets are served with a long-lived immutable cache
+     * entry, but *only* for allowlisted extensions and after the path guard.
+     * `index: false` + `redirect: false` stop directory probes and rewrites.
+     */
+    app.use(
+      express.static(distPath, {
+        index: false,
+        redirect: false,
+        // Dotfiles are allowed here because the path guard above already
+        // refuses every dot-prefixed request except /.well-known/ (which RFC
+        // 9116 requires for security.txt). Keeping the rule in one place means
+        // /.git, /.env and ./dist/* stay unreachable while security.txt serves.
+        dotfiles: 'allow',
+        fallthrough: true,
+        maxAge: '1y',
+        immutable: true,
+        setHeaders: (res: ExResponse, filePath: string) => {
+          const ext = path.extname(filePath).toLowerCase();
+          if (ext === '.html') {
+            res.setHeader('Cache-Control', 'no-store, max-age=0, must-revalidate');
+            return;
+          }
+          if (/^\/?assets\//.test(path.relative(distPath, filePath).replace(/\\/g, '/')) === false) {
+            // Outside the hashed asset folder: no long-lived caching.
+            res.setHeader('Cache-Control', 'public, max-age=300');
+          }
+          if (ext === '.svg' || ext === '.txt') {
+            res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+          }
+        },
+      }),
+    );
+
+    // HTML shell (with a fresh CSP nonce) for the app entry point.
+    app.get(['/', '/index.html'], (req: ExRequest, res: ExResponse) => {
+      if (!sendHtml(res, config, shell)) {
+        res.status(503).type('text/plain').send('Portal assets are not built yet.');
+      }
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`CAPACITY CONNECT server running on http://0.0.0.0:${PORT}`);
+  const next404 = (_req: ExRequest, res: ExResponse) => {
+    res.status(404).json({ error: 'Not found', requestId: _req.requestId ?? String(res.getHeader('X-Request-Id') ?? '') });
+  };
+
+  /* ----------------------------- SPA fallback ----------------------------- */
+
+  app.get('*', (req: ExRequest, res: ExResponse) => {
+    const check = isPathSafe(req.path, { allowSource: useViteDev });
+    if (!check.ok) {
+      res.status(check.status === 200 ? 404 : check.status).json({ error: 'Not found', requestId: req.requestId });
+      return;
+    }
+    const ext = extensionOf(req.path);
+    if (ext && !SERVEABLE_EXTENSIONS[ext]) {
+      res.status(404).json({ error: 'Not found', requestId: req.requestId });
+      return;
+    }
+    if (useViteDev) {
+      // Vite's own SPA fallback already transforms `/`; anything reaching this
+      // handler in dev is a missing asset, so answer with a plain 404.
+      next404(req, res);
+      return;
+    }
+    if (!ext || ext === '.html') {
+      if (!sendHtml(res, config, shell)) next404(req, res);
+      return;
+    }
+    next404(req, res);
   });
+
+  /* ----------------------------- error envelope ---------------------------- */
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  app.use((err: any, req: ExRequest, res: ExResponse, _next: NextFunction) => {
+    if (res.headersSent) return;
+
+    if (err instanceof ValidationError) {
+      res.status(400).json({ error: 'Invalid request payload', details: err.details.slice(0, 4), requestId: req.requestId });
+      return;
+    }
+
+    const status: number = typeof err?.status === 'number' ? err.status : typeof err?.statusCode === 'number' ? err.statusCode : 500;
+
+    if (status === 413) {
+      res.status(413).json({ error: 'Request body too large', limit: config.bodyLimitBytes, requestId: req.requestId });
+      return;
+    }
+    if (err?.type === 'entity.parse.failed' || status === 400) {
+      res.status(400).json({ error: 'Malformed JSON payload', code: 'bad_json', requestId: req.requestId });
+      return;
+    }
+
+    log.log('app.shutdown', `Unhandled error while serving ${req.method} ${req.path.split('?')[0]}`, {
+      req,
+      severity: 'error',
+      meta: { status, cause: err instanceof Error ? err.message.slice(0, 200) : 'non-error thrown' },
+    });
+    if (config.logLevel === 'debug') {
+      // Local debugging only: never enabled in a deployed environment.
+      // eslint-disable-next-line no-console
+      console.error(err);
+    }
+    res.status(500).json({ error: 'The portal could not complete this request.', code: 'internal_error', requestId: req.requestId });
+  });
+
+  /* -------------------------------- listen -------------------------------- */
+
+  server = http.createServer(app);
+  server.keepAliveTimeout = 5_000;
+  server.headersTimeout = 10_000;
+  server.requestTimeout = 30_000;
+  // Slow-loris / connection-exhaustion ceilings.
+  try {
+    // Node >= 18.4
+    (server as http.Server & { maxRequestsPerSocket?: number }).maxRequestsPerSocket = 100;
+  } catch {
+    /* older runtimes simply keep the default */
+  }
+  server.on('clientError', (err: NodeJS.ErrnoException, socket) => {
+    if (!socket.destroyed && (err?.code === 'HPE_HEADER_OVERFLOW' || err?.code === 'ECONNRESET')) {
+      socket.end('HTTP/1.1 431 Request Header Fields Too Large\r\nConnection: close\r\n\r\n');
+    }
+    socket.destroy();
+  });
+
+  server.listen(config.port, config.host, () => {
+    log.log('app.start', `CAPACITY CONNECT listening on http://${config.host}:${config.port}`, {
+      severity: 'info',
+      meta: {
+        env: config.env,
+        viteDev: useViteDev,
+        demoMode: config.demoMode,
+        cookie: config.sessionCookieName,
+        csp: config.headers.csp ? (config.isProduction ? 'strict (nonce-based)' : 'dev profile') : 'disabled',
+      },
+    });
+    for (const warning of config.warnings) log.log('config.warning', warning, { severity: 'warning' });
+    if (useViteDev) {
+      log.log('config.warning', 'Dev mode serves unbundled source and must never be exposed publicly. Build with `npm run build` and run `NODE_ENV=production npm start`.', { severity: 'notice' });
+    }
+  });
+
+  /* ---------------------------- graceful shutdown --------------------------- */
+
+  let shuttingDown = false;
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    log.log('app.shutdown', `${signal} received: draining connections`, { severity: 'notice' });
+    sessions.dispose();
+    const force = setTimeout(() => process.exit(1), 10_000);
+    force.unref();
+    server?.close(() => {
+      clearTimeout(force);
+      process.exit(0);
+    });
+    setTimeout(() => server?.closeAllConnections?.(), 8_000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-startServer();
+/**
+ * Availability guard: a stray rejection must not take the portal down, but it
+ * must never be swallowed silently either.
+ */
+process.on('unhandledRejection', (reason) => {
+  audit.log('app.shutdown', 'Unhandled promise rejection captured', {
+    severity: 'error',
+    meta: { reason: reason instanceof Error ? reason.message.slice(0, 200) : typeof reason },
+  });
+});
+process.on('uncaughtException', (error) => {
+  audit.log('app.shutdown', `Uncaught exception: ${error?.message?.slice(0, 200) ?? 'unknown'}`, { severity: 'error' });
+  // Give the log a chance to flush, then let the supervisor restart us.
+  setTimeout(() => process.exit(1), 250).unref();
+});
+
+void startServer();

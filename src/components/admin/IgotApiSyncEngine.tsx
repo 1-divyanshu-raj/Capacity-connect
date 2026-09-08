@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { secureId } from '../../lib/security';
 import { 
   RefreshCw, 
   CheckCircle2, 
@@ -169,7 +170,7 @@ export const IgotApiSyncEngine: React.FC<IgotApiSyncEngineProps> = ({ onSyncComp
       const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' IST';
       
       const newSyncLog: ApiPayloadLog = {
-        id: `log-${Date.now()}`,
+        id: secureId('log', 6),
         timestamp: timeString,
         method: 'POST',
         endpoint: '/api/v2/igot/cbp/batch/sync-pending',
@@ -180,7 +181,7 @@ export const IgotApiSyncEngine: React.FC<IgotApiSyncEngineProps> = ({ onSyncComp
         ncfCode: 'NCF-BATCH-2026-LIVE',
         payloadSummary: `Successfully transmitted ${pendingRecordsCount} pending trainee dossiers, 8 assessment certifications, and 1,840 accrued Karma points.`,
         fullPayload: {
-          batchId: `BATCH-MOES-${Date.now().toString().slice(-6)}`,
+          batchId: secureId('BATCH-MOES', 6),
           gatewayEndpoint: 'https://api.igotkarmayogi.gov.in/v2/cbc/moes/sync',
           recordsSynchronized: pendingRecordsCount,
           institutesAffected: ['IMD', 'INCOIS', 'IITM', 'NCMRWF', 'NCPOR'],

@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { UserProfile, ExtractedCertificate } from '../../types';
+import { fetchDemoCredential, verifyProfilePassword } from '../../lib/authApi';
+import { FIELD_LIMITS, safeLine, secureId } from '../../lib/security';
+import { safeImageUrl } from '../../lib/security';
 import { 
   User, 
   Award, 
@@ -32,6 +35,7 @@ export const TraineeProfile: React.FC<TraineeProfileProps> = ({ user, onUpdateUs
   const [passwordInput, setPasswordInput] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [isVerifyingUnlock, setIsVerifyingUnlock] = useState<boolean>(false);
   const [saveSuccessNotice, setSaveSuccessNotice] = useState<string | null>(null);
 
   const [fullName, setFullName] = useState(user.fullName);
@@ -49,20 +53,51 @@ export const TraineeProfile: React.FC<TraineeProfileProps> = ({ user, onUpdateUs
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractedNotice, setExtractedNotice] = useState<string | null>(null);
 
-  const handleUnlockProfile = (e: React.FormEvent) => {
+  // Demo hint is fetched from the server (never embedded in the bundle), so it
+  // disappears automatically when the deployment runs with DEMO_MODE=false.
+  const [demoHint, setDemoHint] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    void fetchDemoCredential(user.role).then((credential) => {
+      if (active) setDemoHint(credential?.password ?? null);
+    });
+    return () => {
+      active = false;
+    };
+  }, [user.role]);
+
+  const handleUnlockProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!passwordInput.trim()) {
       setPasswordError('Password is required. Please enter your account password to unlock.');
       return;
     }
 
-    // Verify password against user password or standard demo key
-    if (passwordInput === user.password || passwordInput === 'Trainee#2026' || passwordInput.length >= 4) {
+    // The portal API re-authenticates the request (constant-time, rate limited,
+    // lockout after repeated failures). Errors are deliberately generic: the
+    // previous build echoed the account password inside the failure message.
+    setIsVerifyingUnlock(true);
+    const result = await verifyProfilePassword(passwordInput, user.role);
+    setIsVerifyingUnlock(false);
+
+    if (result.ok && result.data?.verified) {
       setIsUnlocked(true);
       setPasswordError(null);
-    } else {
-      setPasswordError('Invalid credentials. Please enter the correct account password (e.g. Trainee#2026).');
+      setPasswordInput('');
+      return;
     }
+    if (result.offline) {
+      // Without the auth service this lock is a local display control only.
+      setIsUnlocked(true);
+      setPasswordInput('');
+      setPasswordError('Verification service unreachable: this dossier lock is a local convenience control, not a security boundary.');
+      return;
+    }
+    setPasswordError(
+      result.error?.retryAfterSeconds
+        ? `Too many attempts. Locked for ${Math.ceil(result.error.retryAfterSeconds / 60)} minute(s).`
+        : 'Invalid credentials. Please re-enter your account password.',
+    );
   };
 
   const handleLockProfile = () => {
@@ -106,7 +141,7 @@ export const TraineeProfile: React.FC<TraineeProfileProps> = ({ user, onUpdateUs
           name: newSkillName.trim(), 
           level: newSkillLevel, 
           category: 'Technical',
-          ncfId: `NCF-SKILL-${Math.floor(100 + Math.random() * 900)}`,
+          ncfId: secureId('NCF-SKILL', 3),
           karmaCredit: 50
         }
       ]);
@@ -128,12 +163,13 @@ export const TraineeProfile: React.FC<TraineeProfileProps> = ({ user, onUpdateUs
     setExtractedNotice('AI OCR Engine analyzing credential header, digital signatures, and issuing body...');
 
     setTimeout(() => {
+      const originalName = safeLine(file.name, 140);
       const newCert: ExtractedCertificate = {
-        id: `cert-${Date.now()}`,
-        title: file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') || 'Doppler Weather Radar Level-1 Certification',
+        id: secureId('cert', 10),
+        title: originalName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ').slice(0, 120) || 'Doppler Weather Radar Level-1 Certification',
         issuer: 'India Meteorological Department (IMD) - Central Training Institute',
         issueDate: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
-        credentialId: `IMD-VERIFIED-${Math.floor(1000 + Math.random() * 9000)}`,
+        credentialId: secureId('IMD-VERIFIED', 4),
         verified: true,
         fileSize: `${(file.size / (1024 * 1024)).toFixed(1)} MB PDF`,
         autoExtractedDetails: {
@@ -186,9 +222,13 @@ export const TraineeProfile: React.FC<TraineeProfileProps> = ({ user, onUpdateUs
                 <input
                   id="trainee-profile-unlock-password"
                   type={showPassword ? 'text' : 'password'}
+                  name="profile-unlock-password"
+                  autoComplete="current-password"
+                  maxLength={FIELD_LIMITS.password}
+                  disabled={isVerifyingUnlock}
                   value={passwordInput}
                   onChange={(e) => {
-                    setPasswordInput(e.target.value);
+                    setPasswordInput(e.target.value.slice(0, FIELD_LIMITS.password));
                     if (passwordError) setPasswordError(null);
                   }}
                   placeholder="Enter password to unlock profile..."
@@ -217,11 +257,18 @@ export const TraineeProfile: React.FC<TraineeProfileProps> = ({ user, onUpdateUs
               className="w-full py-3 rounded-xl bg-rose-700 dark:bg-rose-600 hover:bg-rose-800 dark:hover:bg-rose-500 text-white font-bold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-95"
             >
               <Unlock className="w-4 h-4" />
-              <span>Verify Password & Access Profile</span>
+              <span>{isVerifyingUnlock ? 'Verifying...' : 'Verify Password & Access Profile'}</span>
             </button>
 
             <p className="text-[11px] text-slate-500 dark:text-slate-400 pt-1">
-              Hint: Enter your trainee password (e.g. <span className="font-mono font-bold text-rose-600 dark:text-rose-400">Trainee#2026</span>) to reveal your full profile dossier.
+              {demoHint ? (
+                <>
+                  Hint: Enter your trainee password (e.g.{' '}
+                  <span className="font-mono font-bold text-rose-600 dark:text-rose-400">{demoHint}</span>) to reveal your full profile dossier.
+                </>
+              ) : (
+                'Use the password issued by your reporting officer to reveal your full profile dossier.'
+              )}
             </p>
           </form>
         </div>
@@ -244,8 +291,8 @@ export const TraineeProfile: React.FC<TraineeProfileProps> = ({ user, onUpdateUs
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
             <div className="relative">
               <img 
-                src={user.avatar} 
-                alt={user.fullName} 
+                src={safeImageUrl(user.avatar)} 
+                alt={safeLine(user.fullName, 80)} 
                 className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl object-cover border-4 border-white dark:border-slate-700 shadow-lg"
               />
               <span className="absolute -bottom-2 -right-2 bg-emerald-500 text-white p-1.5 rounded-full border-2 border-white dark:border-slate-800 shadow-sm" title="Active Trainee">
@@ -352,10 +399,11 @@ export const TraineeProfile: React.FC<TraineeProfileProps> = ({ user, onUpdateUs
               <input
                 type="text"
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                onChange={(e) => setFullName(e.target.value.slice(0, 160))}
                 required
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 text-slate-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none transition"
-              />
+                maxLength={160}
+                />
             </div>
 
             <div className="space-y-2">
@@ -365,10 +413,11 @@ export const TraineeProfile: React.FC<TraineeProfileProps> = ({ user, onUpdateUs
               <input
                 type="text"
                 value={qualifications}
-                onChange={(e) => setQualifications(e.target.value)}
+                onChange={(e) => setQualifications(e.target.value.slice(0, 240))}
                 required
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 text-slate-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none transition"
-              />
+                maxLength={240}
+                />
             </div>
 
             <div className="space-y-2 md:col-span-2">
@@ -378,9 +427,10 @@ export const TraineeProfile: React.FC<TraineeProfileProps> = ({ user, onUpdateUs
               <textarea
                 rows={3}
                 value={workExperience}
-                onChange={(e) => setWorkExperience(e.target.value)}
+                onChange={(e) => setWorkExperience(e.target.value.slice(0, 240))}
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 text-slate-900 dark:text-white text-sm font-medium focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none transition"
-              />
+                maxLength={240}
+                />
             </div>
           </div>
         </div>
@@ -422,10 +472,11 @@ export const TraineeProfile: React.FC<TraineeProfileProps> = ({ user, onUpdateUs
               <input
                 type="text"
                 value={newInterest}
-                onChange={(e) => setNewInterest(e.target.value)}
+                onChange={(e) => setNewInterest(e.target.value.slice(0, 160))}
                 placeholder="Add interest e.g., Tsunami Telemetry..."
                 className="flex-1 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs outline-none focus:border-rose-500"
-              />
+                maxLength={160}
+                />
               <button
                 type="button"
                 onClick={handleAddInterest}
@@ -499,10 +550,11 @@ export const TraineeProfile: React.FC<TraineeProfileProps> = ({ user, onUpdateUs
               <input
                 type="text"
                 value={newSkillName}
-                onChange={(e) => setNewSkillName(e.target.value)}
+                onChange={(e) => setNewSkillName(e.target.value.slice(0, 160))}
                 placeholder="Add skill (e.g. NetCDF, MetPy)..."
                 className="flex-1 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs outline-none focus:border-rose-500"
-              />
+                maxLength={160}
+                />
               <input
                 type="number"
                 min={10}

@@ -222,10 +222,11 @@ export const AssignmentAutoGradingEngine: React.FC<AssignmentAutoGradingEnginePr
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => setSearchQuery(e.target.value.slice(0, 4000))}
             placeholder="Search by trainee or task title..."
             className="w-full pl-9.5 pr-4 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
-          />
+            maxLength={4000}
+            />
         </div>
 
         <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">

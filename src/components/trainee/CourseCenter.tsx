@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { safeImageUrl } from '../../lib/security';
 import { Course } from '../../types';
 import { 
   Search, 
@@ -92,9 +93,10 @@ export const CourseCenter: React.FC<CourseCenterProps> = ({
             type="text"
             placeholder="Search modules by topic (Radar, WRF, Seismology, Tsunami, Cryosphere)..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => setSearchQuery(e.target.value.slice(0, 4000))}
             className="w-full pl-10 pr-4 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none"
-          />
+            maxLength={4000}
+            />
         </div>
 
         {/* Category Pills Slider */}
@@ -126,7 +128,7 @@ export const CourseCenter: React.FC<CourseCenterProps> = ({
             {/* Thumbnail Header */}
             <div className="relative h-48 overflow-hidden bg-slate-900">
               <img
-                src={course.thumbnail}
+                src={safeImageUrl(course.thumbnail)}
                 alt={course.title}
                 className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
               />
