@@ -1,0 +1,24 @@
+# Capacity Connect Security Vulnerability Disclosure Policy (RFC 9116)
+# https://www.rfc-editor.org/rfc/rfc9116
+
+# Primary contact for reporting security vulnerabilities
+Contact: mailto:security@example.com
+
+# Date and time after which the information in this file is considered stale
+# Note: RFC 9116 requires an Expires field in ISO 8601 format
+Expires: 2027-12-31T23:59:59.000Z
+
+# Preferred languages for security reports
+Preferred-Languages: en
+
+# Canonical URL of this security.txt file
+Canonical: https://yourdomain.com/.well-known/security.txt
+
+# Link to vulnerability disclosure program and policy
+Policy: https://yourdomain.com/security
+
+# Link to security researcher acknowledgments / hall of fame
+Acknowledgments: https://yourdomain.com/security/hall-of-fame
+
+# Hiring / security team contact
+Hiring: https://yourdomain.com/careers
