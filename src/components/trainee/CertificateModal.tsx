@@ -1,10 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { apiRequest } from '../../lib/api';
-import { safeLine, secureId } from '../../lib/security';
+import React, { useRef } from 'react';
 import { X, Download, Printer, ShieldCheck, CheckCircle2, QrCode, Award, Sparkles } from 'lucide-react';
-
-/** Serial cache so a re-opened certificate keeps the same signed identifier. */
-const issuedCache = new Map<string, { certificateId: string; integrityHash?: string }>();
 
 interface CertificateModalProps {
   traineeName: string;
@@ -24,39 +19,6 @@ export const CertificateModal: React.FC<CertificateModalProps> = ({
   onClose,
 }) => {
   const certificateRef = useRef<HTMLDivElement>(null);
-
-  /**
-   * Certificates used to be numbered from `Date.now()` in the browser: sequential,
-   * guessable and forgeable. The serial is now minted by the portal API (HMAC
-   * signed, verifiable via /api/certificates/verify). One issuance is cached per
-   * (course, score) so re-opening the modal does not mint a new serial.
-   */
-  const [issued, setIssued] = useState<{ certificateId: string; integrityHash?: string } | null>(null);
-  useEffect(() => {
-    const cacheKey = `${courseTitle}|${score}`;
-    if (issuedCache.has(cacheKey)) {
-      setIssued(issuedCache.get(cacheKey) ?? null);
-      return;
-    }
-    let active = true;
-    void apiRequest<{ certificateId?: string; integrityHash?: string }>('/api/certificates/issue', {
-      method: 'POST',
-      body: { courseTitle: safeLine(courseTitle, 240), score: Math.trunc(Number(score) || 0), completedDate: safeLine(completedDate, 40) },
-      timeoutMs: 12_000,
-    }).then((result) => {
-      if (!active) return;
-      const serial = result.ok && result.data?.certificateId
-        ? { certificateId: safeLine(result.data.certificateId, 48), integrityHash: safeLine(result.data.integrityHash ?? '', 32) || undefined }
-        : { certificateId: secureId('MOES-CERT', 12) };
-      issuedCache.set(cacheKey, serial);
-      setIssued(serial);
-    });
-    return () => {
-      active = false;
-    };
-  }, [courseTitle, score, completedDate]);
-
-  const displayCertificateId = issued?.certificateId ?? certificateId;
 
   const handlePrint = () => {
     window.print();
@@ -161,7 +123,7 @@ export const CertificateModal: React.FC<CertificateModalProps> = ({
 
               <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 border border-slate-300 text-slate-800 text-xs font-mono font-bold">
                 <span className="text-slate-500 font-sans text-[10px] uppercase">NCF-ID:</span>
-                <span className="text-rose-700">{displayCertificateId}</span>
+                <span className="text-rose-700">{certificateId}</span>
               </div>
 
               <div className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-bold">
@@ -189,11 +151,8 @@ export const CertificateModal: React.FC<CertificateModalProps> = ({
               <div className="w-16 h-16 rounded-xl bg-white border border-slate-300 p-1 shadow-sm flex items-center justify-center">
                 <QrCode className="w-12 h-12 text-slate-800" />
               </div>
-              <span
-                className="font-mono text-[9px] text-rose-800 font-bold block"
-                title={issued?.integrityHash ? `Server-signed. Integrity digest: ${issued.integrityHash}` : 'Verify with /api/certificates/verify'}
-              >
-                ID: {displayCertificateId}
+              <span className="font-mono text-[9px] text-rose-800 font-bold block">
+                ID: {certificateId}
               </span>
               <span className="text-[9px] text-slate-400">
                 Issued: {completedDate}

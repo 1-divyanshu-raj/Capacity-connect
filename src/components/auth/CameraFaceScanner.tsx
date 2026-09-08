@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, RefreshCw, CheckCircle2, AlertTriangle, Scan, ShieldCheck, UserCheck } from 'lucide-react';
 import { sound } from '../../utils/soundEffects';
-import { safeImageUrl } from '../../lib/security';
 
 interface CameraFaceScannerProps {
   onVerified: () => void;
@@ -154,7 +153,7 @@ export const CameraFaceScanner: React.FC<CameraFaceScannerProps> = ({
             <div className="relative mb-3">
               {userAvatar ? (
                 <img
-                  src={safeImageUrl(userAvatar)}
+                  src={userAvatar}
                   alt={userName}
                   className="w-24 h-24 rounded-full object-cover border-2 border-rose-400 shadow-[0_0_20px_rgba(244,63,94,0.4)]"
                 />

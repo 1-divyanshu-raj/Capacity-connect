@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { secureId } from '../../lib/security';
 import { LibraryResource } from '../../types';
 import { 
   Upload, 
@@ -44,7 +43,7 @@ export const TrainerLibrary: React.FC<TrainerLibraryProps> = ({
     if (!title.trim()) return;
 
     const newRes: LibraryResource = {
-      id: secureId('lib', 8),
+      id: `lib-${Date.now()}`,
       title,
       type,
       subject,
@@ -123,10 +122,9 @@ export const TrainerLibrary: React.FC<TrainerLibraryProps> = ({
             type="text"
             placeholder="Search resources by title, topic, or tag..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value.slice(0, 4000))}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2 rounded-xl bg-white dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none"
-            maxLength={4000}
-            />
+          />
         </div>
 
         <div className="flex items-center gap-1.5 overflow-x-auto">
@@ -240,10 +238,9 @@ export const TrainerLibrary: React.FC<TrainerLibraryProps> = ({
                   required
                   placeholder="e.g., Masterclass on Polarimetric Radar Dual-Pol Variables"
                   value={title}
-                  onChange={(e) => setTitle(e.target.value.slice(0, 160))}
+                  onChange={(e) => setTitle(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-rose-500"
-                  maxLength={160}
-                  />
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -289,10 +286,9 @@ export const TrainerLibrary: React.FC<TrainerLibraryProps> = ({
                   rows={3}
                   placeholder="Briefly explain the contents, methodology, and prerequisites..."
                   value={description}
-                  onChange={(e) => setDescription(e.target.value.slice(0, 4000))}
+                  onChange={(e) => setDescription(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-rose-500"
-                  maxLength={4000}
-                  />
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -304,10 +300,9 @@ export const TrainerLibrary: React.FC<TrainerLibraryProps> = ({
                     type="text"
                     placeholder="e.g. 12.4 MB"
                     value={fileSize}
-                    onChange={(e) => setFileSize(e.target.value.slice(0, 240))}
+                    onChange={(e) => setFileSize(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 outline-none"
-                    maxLength={240}
-                    />
+                  />
                 </div>
 
                 <div className="space-y-1">
@@ -318,10 +313,9 @@ export const TrainerLibrary: React.FC<TrainerLibraryProps> = ({
                     type="text"
                     placeholder="e.g. Radar, IMD, SOP"
                     value={tags}
-                    onChange={(e) => setTags(e.target.value.slice(0, 240))}
+                    onChange={(e) => setTags(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 outline-none"
-                    maxLength={240}
-                    />
+                  />
                 </div>
               </div>
 

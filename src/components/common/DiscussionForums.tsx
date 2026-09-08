@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { secureId } from '../../lib/security';
 import { DiscussionTopic, DiscussionReply, UserProfile } from '../../types';
 import { 
   MessageSquare, 
@@ -21,7 +20,6 @@ import {
   X
 } from 'lucide-react';
 import { sound } from '../../utils/soundEffects';
-import { safeLine, safeText } from '../../lib/security';
 
 interface DiscussionForumsProps {
   currentUser: UserProfile;
@@ -182,7 +180,7 @@ export const DiscussionForums: React.FC<DiscussionForumsProps> = ({ currentUser 
 
     sound.playClick();
     const newTopic: DiscussionTopic = {
-      id: secureId('topic', 8),
+      id: `topic-${Date.now()}`,
       title: newTitle.trim(),
       author: currentUser.fullName,
       authorRole: currentUser.role,
@@ -211,7 +209,7 @@ export const DiscussionForums: React.FC<DiscussionForumsProps> = ({ currentUser 
 
     sound.playClick();
     const newReply: DiscussionReply = {
-      id: secureId('reply', 8),
+      id: `reply-${Date.now()}`,
       author: currentUser.fullName,
       authorRole: currentUser.role,
       authorInstitute: currentUser.institute,
@@ -287,10 +285,9 @@ export const DiscussionForums: React.FC<DiscussionForumsProps> = ({ currentUser 
               type="text"
               placeholder="Search topics, questions, faculty replies, or NCF codes..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value.slice(0, 4000))}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-rose-500 outline-none"
-              maxLength={4000}
-              />
+            />
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
@@ -350,10 +347,9 @@ export const DiscussionForums: React.FC<DiscussionForumsProps> = ({ currentUser 
                   required
                   placeholder="e.g. Velocity de-aliasing filter configuration for IMD radar..."
                   value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value.slice(0, 160))}
+                  onChange={(e) => setNewTitle(e.target.value)}
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-rose-500"
-                  maxLength={160}
-                  />
+                />
               </div>
 
               <div className="space-y-1.5">
@@ -384,10 +380,9 @@ export const DiscussionForums: React.FC<DiscussionForumsProps> = ({ currentUser 
                   rows={4}
                   placeholder="Describe your technical observations, data parameters, or the specific competency question..."
                   value={newContent}
-                  onChange={(e) => setNewContent(e.target.value.slice(0, 4000))}
+                  onChange={(e) => setNewContent(e.target.value)}
                   className="w-full p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-rose-500 resize-none"
-                  maxLength={4000}
-                  />
+                />
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-2">
@@ -547,8 +542,7 @@ export const DiscussionForums: React.FC<DiscussionForumsProps> = ({ currentUser 
                         if (e.key === 'Enter') handleAddReply(topic.id);
                       }}
                       className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-rose-500"
-                      maxLength={240}
-                      />
+                    />
                     <button
                       type="button"
                       onClick={() => handleAddReply(topic.id)}

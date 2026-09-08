@@ -36,7 +36,6 @@ import { TraineeDashboard } from './components/trainee/TraineeDashboard';
 import { TrainerDashboard } from './components/trainer/TrainerDashboard';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { useTheme } from './hooks';
-import { logout as endPortalSession } from './lib/authApi';
 
 export default function App() {
   // Authentication State
@@ -66,9 +65,6 @@ export default function App() {
   // Sign out handler (returns to Login Page where role switching is authorized)
   const handleSignOut = () => {
     setCurrentUser(null);
-    // Destroy the server-side session too, so the HttpOnly cookie cannot be
-    // replayed from this browser after the "sign out" click.
-    endPortalSession();
   };
 
   // Trainee & Trainer: Assignment Actions

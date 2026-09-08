@@ -1,14 +1,24 @@
-# Security vulnerability disclosure policy — Capacity Connect (RFC 9116)
+# Capacity Connect Security Vulnerability Disclosure Policy (RFC 9116)
 # https://www.rfc-editor.org/rfc/rfc9116
 
-# Preferred channel: GitHub private vulnerability report (not a public issue).
-Contact: https://github.com/1-divyanshu-raj/Capacity-connect/security/advisories/new
-# TODO(maintainer): publish a monitored security mailbox here, e.g.
-# Contact: mailto:security@<your-deployed-domain>
+# Primary contact for reporting security vulnerabilities
+Contact: mailto:security@example.com
 
-# Reports are triaged alongside SECURITY.md, which documents the threat model,
-# the current controls and the risks that are consciously accepted.
-Policy: https://github.com/1-divyanshu-raj/Capacity-connect/blob/main/SECURITY.md
-
+# Date and time after which the information in this file is considered stale
+# Note: RFC 9116 requires an Expires field in ISO 8601 format
 Expires: 2027-12-31T23:59:59.000Z
+
+# Preferred languages for security reports
 Preferred-Languages: en
+
+# Canonical URL of this security.txt file
+Canonical: https://yourdomain.com/.well-known/security.txt
+
+# Link to vulnerability disclosure program and policy
+Policy: https://yourdomain.com/security
+
+# Link to security researcher acknowledgments / hall of fame
+Acknowledgments: https://yourdomain.com/security/hall-of-fame
+
+# Hiring / security team contact
+Hiring: https://yourdomain.com/careers
