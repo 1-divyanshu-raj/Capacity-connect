@@ -38,7 +38,6 @@
   },
   "include": [
     "src",
-    "server",
     "server.ts",
     "vite.config.ts"
   ]

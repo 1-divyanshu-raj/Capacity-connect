@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { secureId } from '../../lib/security';
 import { 
   UserProfile, 
   Course, 
@@ -122,7 +121,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
       courseTitle: result.courseTitle,
       score: result.score,
       completedDate: result.completedAt,
-      certificateId: result.certificateId || secureId('MOES-CERT', 12),
+      certificateId: result.certificateId || `MOES-CERT-${Date.now().toString().slice(-6)}`,
     });
   };
 

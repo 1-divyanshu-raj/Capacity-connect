@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { safeImageUrl } from '../../lib/security';
 import { UserRole, UserProfile } from '../../types';
 import { INITIAL_USERS } from '../../data/mockData';
 import { BiometricScanner } from './BiometricScanner';
@@ -34,18 +33,6 @@ import {
   LogIn
 } from 'lucide-react';
 import { sound } from '../../utils/soundEffects';
-import {
-  beginSignIn,
-  completeThirdFactor,
-  fetchDemoCredential,
-  registerAccount,
-  resendSecondFactor,
-  startSsoSignIn,
-  verifySecondFactor,
-  type ChallengeResponse,
-} from '../../lib/authApi';
-import { setCsrfToken } from '../../lib/api';
-import { FIELD_LIMITS } from '../../lib/security';
 
 interface LoginPageProps {
   onLoginSuccess: (user: UserProfile) => void;
@@ -88,14 +75,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   // Step 3 verification flag
   const [step3Passed, setStep3Passed] = useState<boolean>(false);
 
-  // Server-issued handles for the three-step pipeline. The browser no longer
-  // decides whether a factor passed: it only carries the handles the portal
-  // API issued for this attempt (challenge -> verification token -> session).
-  const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [verificationToken, setVerificationToken] = useState<string | null>(null);
-  const [otpHint, setOtpHint] = useState<string>('');
-  const [isAuthPending, setIsAuthPending] = useState<boolean>(false);
-
   // General error state
   const [errorMessage, setErrorMessage] = useState<string>('');
 
@@ -112,23 +91,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [regInstitute, setRegInstitute] = useState<string>('India Meteorological Department (IMD HQ)');
   const [regPassword, setRegPassword] = useState<string>('');
 
-  // Opens Step 2 with whatever the server handed back for this attempt.
-  // `devOtp` is only ever present when the server runs in DEMO_MODE, so the
-  // bundle contains no second factor of its own.
-  const openSecondFactor = (challenge?: (ChallengeResponse & { challengeId?: string }) | null) => {
-    setChallengeId(challenge?.challengeId ?? null);
-    setOtpHint(challenge?.devOtp ?? '');
-    setOtpCode(challenge?.devOtp ?? '');
-    setCurrentSecurityStep(2);
-    setIs2FAModalOpen(true);
-  };
-
-  const resetPipeline = () => {
-    setChallengeId(null);
-    setVerificationToken(null);
-    setOtpHint('');
-  };
-
   // Handle Quick Role Select - assigns XYZ_<role> as default profile
   const handleRoleSelect = (role: UserRole) => {
     sound.playClick();
@@ -139,7 +101,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     setStep3Passed(false);
     setErrorMessage('');
     setOtpCode('');
-    resetPipeline();
 
     setPassword(''); // Strictly ensure password is empty on role switch so no profile is mentioned!
 
@@ -155,19 +116,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     }
   };
 
-  // Helper to unlock demo profile by setting the required password.
-  // The secret is served by the portal API (and only while DEMO_MODE is on),
-  // so it never exists inside the shipped JavaScript bundle.
-  const handleUnlockDemoProfile = async () => {
+  // Helper to unlock demo profile by setting the required password
+  const handleUnlockDemoProfile = () => {
     sound.playClick();
+    const demoPassword = selectedRole === 'admin' ? 'AdminSec#2026' : selectedRole === 'trainer' ? 'Trainer#2026' : 'Trainee#2026';
+    setPassword(demoPassword);
     setErrorMessage('');
-    const credential = await fetchDemoCredential(selectedRole);
-    if (!credential?.password) {
-      setErrorMessage('Demo auto-fill is unavailable: this deployment does not expose demo credentials. Enter your official password.');
-      return;
-    }
-    setUsername(credential.username);
-    setPassword(credential.password);
   };
 
   const handleToggleSound = () => {
@@ -177,11 +131,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   };
 
   // STEP 1: Handle Initial Password Submission -> Triggers Step 2: 2FA Modal
-  const handleCredentialsSubmit = async (e: React.FormEvent) => {
+  const handleCredentialsSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     sound.playClick();
     setErrorMessage('');
-    resetPipeline();
 
     if (!username.trim()) {
       setErrorMessage('Please enter your official username or government ID.');
@@ -193,27 +146,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       return;
     }
 
-    setIsAuthPending(true);
-    const result = await beginSignIn(username.trim(), password, selectedRole);
-    setIsAuthPending(false);
-
-    if (!result.ok) {
-      // No portal API reachable (static hosting / network outage): keep the
-      // demonstration flow alive instead of dead-ending the screen.
-      if (result.offline) {
-        openSecondFactor(null);
-        return;
-      }
-      setErrorMessage(result.error?.message ?? 'Sign-in failed. Please retry.');
-      return;
-    }
-
     // Advance to Step 2: Open 2FA Verification Modal!
-    openSecondFactor(result.data ?? null);
+    setCurrentSecurityStep(2);
+    setOtpCode('982401'); // Pre-fill demo hint for evaluation
+    setIs2FAModalOpen(true);
   };
 
   // STEP 2: Handle 2FA OTP Submission -> Advances to Step 3 (Camera Face Recognition or Admin Biometric)
-  const handleOtpVerificationSubmit = async (e: React.FormEvent) => {
+  const handleOtpVerificationSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     sound.playClick();
     setOtpErrorMessage('');
@@ -224,73 +164,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     }
 
     setIsVerifyingOtp(true);
-
-    if (challengeId) {
-      const result = await verifySecondFactor(challengeId, otpCode.trim());
+    setTimeout(() => {
+      sound.playSuccess();
       setIsVerifyingOtp(false);
-      if (!result.ok) {
-        if (result.offline) {
-          setIs2FAModalOpen(false);
-          setCurrentSecurityStep(3);
-          setIsStep3ModalOpen(true);
-          return;
-        }
-        setOtpErrorMessage(result.error?.message ?? 'Verification failed. Please retry.');
-        return;
-      }
-      setVerificationToken(result.data.verificationToken);
-    } else {
-      // Offline demonstration path (no challenge was issued by the server).
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      setIsVerifyingOtp(false);
-    }
+      setIs2FAModalOpen(false);
 
-    sound.playSuccess();
-    setIs2FAModalOpen(false);
-
-    // Transition to Step 3: Face Recognition (Trainee/Trainer) or Gov Biometric (Admin)
-    setCurrentSecurityStep(3);
-    setIsStep3ModalOpen(true);
-  };
-
-  // Step 2 helper: re-issues the code on the same challenge (rate limited).
-  const handleResendOtp = async () => {
-    sound.playClick();
-    if (!challengeId) {
-      setOtpCode(otpHint);
-      return;
-    }
-    const result = await resendSecondFactor(challengeId);
-    if (result.ok && result.data.devOtp) {
-      setOtpHint(result.data.devOtp);
-      setOtpCode(result.data.devOtp);
-    }
+      // Transition to Step 3: Face Recognition (Trainee/Trainer) or Gov Biometric (Admin)
+      setCurrentSecurityStep(3);
+      setIsStep3ModalOpen(true);
+    }, 500);
   };
 
   // STEP 3: Handle Final Biometric / Face Recognition Success -> Logs user into portal
-  const handleStep3VerificationSuccess = async () => {
+  const handleStep3VerificationSuccess = () => {
     setStep3Passed(true);
     setIsStep3ModalOpen(false);
     sound.playSuccess();
-
-    if (verificationToken) {
-      const result = await completeThirdFactor(
-        verificationToken,
-        selectedRole === 'admin' ? 'biometric' : 'face',
-      );
-      if (!result.ok) {
-        if (!result.offline) {
-          setStep3Passed(false);
-          setCurrentSecurityStep(1);
-          setErrorMessage(result.error?.message ?? 'Sign-in failed. Please retry.');
-          return;
-        }
-      } else {
-        // The server issued an HttpOnly session cookie with this response; keep
-        // the matching CSRF token in memory (never in localStorage).
-        setCsrfToken(result.data.csrfToken ?? null);
-      }
-    }
 
     // Log the user into their role-isolated portal
     setTimeout(() => {
@@ -299,16 +188,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   };
 
   // Handle Register Form Submission
-  const handleRegisterSubmit = async (e: React.FormEvent) => {
+  const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     sound.playClick();
 
     if (!regFullName.trim() || !regEmail.trim() || !regPassword) {
       setErrorMessage('Please fill out all required registration fields.');
-      return;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[A-Za-z]{2,}$/.test(regEmail.trim())) {
-      setErrorMessage('Enter a valid official email address.');
       return;
     }
 
@@ -341,29 +226,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     setPassword(regPassword);
     setActiveTab('login');
 
-    // The account (and its scrypt-hashed password) is created by the portal
-    // API, which then issues the 2FA challenge for the new account.
-    setIsAuthPending(true);
-    const result = await registerAccount({
-      fullName: regFullName.trim(),
-      email: regEmail.trim(),
-      password: regPassword,
-      role: regRole,
-      institute: regInstitute,
-    });
-    setIsAuthPending(false);
-
-    if (!result.ok && !result.offline) {
-      setErrorMessage(result.error?.message ?? 'Sign-in failed. Please retry.');
-      return;
-    }
-
     // Automatically trigger Step 2 (2FA Verification)
-    openSecondFactor(result.ok ? result.data : null);
+    setCurrentSecurityStep(2);
+    setOtpCode('982401');
+    setIs2FAModalOpen(true);
   };
 
   // Handle SSO Sign-in (Google, Apple, Microsoft)
-  const handleSSOSignIn = async (provider: 'Google' | 'Apple' | 'Microsoft') => {
+  const handleSSOSignIn = (provider: 'Google' | 'Apple' | 'Microsoft') => {
     sound.playClick();
     const random = generateRandomProfile(selectedRole);
     const ssoUser: UserProfile = {
@@ -388,10 +258,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     };
 
     setActiveUser(ssoUser);
-
-    const result = await startSsoSignIn(provider, selectedRole);
     // Proceed directly to Step 2 2FA verification modal
-    openSecondFactor(result.ok ? result.data : null);
+    setCurrentSecurityStep(2);
+    setOtpCode('982401');
+    setIs2FAModalOpen(true);
   };
 
   return (
@@ -732,7 +602,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <img 
-                          src={safeImageUrl(activeUser.avatar)} 
+                          src={activeUser.avatar} 
                           alt={activeUser.fullName}
                           className="w-10 h-10 rounded-full object-cover border-2 border-emerald-500 dark:border-emerald-400 shrink-0"
                         />
@@ -770,12 +640,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                       <input
                         id="login-username-input"
                         type="text"
-                        name="portal-username"
-                        autoComplete="username"
-                        spellCheck={false}
-                        maxLength={FIELD_LIMITS.username}
                         value={username}
-                        onChange={(e) => setUsername(e.target.value.slice(0, FIELD_LIMITS.username))}
+                        onChange={(e) => setUsername(e.target.value)}
                         required
                         placeholder="Official username"
                         className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-[#cbd5e1] dark:border-slate-700 text-[#1e293b] dark:text-white text-sm focus:border-rose-500 outline-none transition"
@@ -788,7 +654,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                       <span>Password</span>
                       <button
                         type="button"
-                        onClick={handleUnlockDemoProfile}
+                        onClick={() => setPassword(selectedRole === 'trainee' ? 'Trainee#2026' : selectedRole === 'trainer' ? 'Trainer#2026' : 'AdminSec#2026')}
                         className="text-[10px] text-rose-600 dark:text-rose-400 font-mono hover:underline"
                       >
                         Auto-fill Demo
@@ -799,12 +665,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                       <input
                         id="login-password-input"
                         type={showPassword ? 'text' : 'password'}
-                        name="portal-password"
-                        autoComplete="current-password"
-                        spellCheck={false}
-                        maxLength={FIELD_LIMITS.password}
                         value={password}
-                        onChange={(e) => setPassword(e.target.value.slice(0, FIELD_LIMITS.password))}
+                        onChange={(e) => setPassword(e.target.value)}
                         required
                         placeholder="••••••••••••"
                         className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-[#cbd5e1] dark:border-slate-700 text-[#1e293b] dark:text-white text-sm focus:border-rose-500 outline-none transition"
@@ -1152,12 +1014,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                     type="button"
                     onClick={() => {
                       sound.playClick();
-                      setOtpCode(otpHint);
+                      setOtpCode('982401');
                     }}
-                    disabled={!otpHint}
-                    className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline font-mono disabled:opacity-50"
+                    className="text-[11px] text-rose-600 dark:text-rose-400 hover:underline font-mono"
                   >
-                    {otpHint ? 'Auto-fill Demo Code' : 'Code Sent To Your Device'}
+                    Auto-fill Demo (982401)
                   </button>
                 </div>
 
@@ -1166,8 +1027,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   type="text"
                   maxLength={6}
                   value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
-                  placeholder="••••••"
+                  onChange={(e) => setOtpCode(e.target.value)}
+                  placeholder="982401"
                   required
                   className="w-full py-3 px-4 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-center font-mono tracking-widest text-xl text-slate-900 dark:text-white font-bold outline-none focus:border-rose-500 focus:bg-white dark:focus:bg-slate-800 transition"
                 />
@@ -1177,7 +1038,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 <span>Code valid for 10 minutes</span>
                 <button
                   type="button"
-                  onClick={handleResendOtp}
+                  onClick={() => {
+                    sound.playClick();
+                    setOtpCode('982401');
+                  }}
                   className="text-rose-600 dark:text-rose-400 hover:underline"
                 >
                   Resend Code
@@ -1193,7 +1057,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 {isVerifyingOtp ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>{challengeId ? 'Verifying Code...' : 'Verifying Code...'}</span>
+                    <span>Verifying Code...</span>
                   </>
                 ) : (
                   <>

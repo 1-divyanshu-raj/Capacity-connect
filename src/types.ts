@@ -6,9 +6,7 @@ export interface UserProfile {
   fullName: string;
   email: string;
   role: UserRole;
-  // NOTE: no credential material lives on the client profile object. Sign-in,
-  // profile re-verification and role assertions are decided by the portal API
-  // (`/api/auth/*`); anything stored here is display data only.
+  password?: string;
   institute: string;
   designation: string;
   avatar: string;

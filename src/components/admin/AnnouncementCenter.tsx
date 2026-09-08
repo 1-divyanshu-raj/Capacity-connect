@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { secureId } from '../../lib/security';
 import { Announcement } from '../../types';
 import { 
   Bell, 
@@ -37,7 +36,7 @@ export const AnnouncementCenter: React.FC<AnnouncementCenterProps> = ({
     if (!title.trim() || !content.trim()) return;
 
     const newAnnouncement: Announcement = {
-      id: secureId('ann', 8),
+      id: `ann-${Date.now()}`,
       title,
       content,
       date: 'Just Now',
@@ -122,10 +121,9 @@ export const AnnouncementCenter: React.FC<AnnouncementCenterProps> = ({
                 required
                 placeholder="e.g., Mandatory Dual-Pol Radar Calibration Workshop for April Batch"
                 value={title}
-                onChange={(e) => setTitle(e.target.value.slice(0, 160))}
+                onChange={(e) => setTitle(e.target.value)}
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-xs outline-none focus:ring-2 focus:ring-rose-500"
-                maxLength={160}
-                />
+              />
             </div>
 
             <div className="space-y-1">
@@ -155,10 +153,9 @@ export const AnnouncementCenter: React.FC<AnnouncementCenterProps> = ({
               required
               placeholder="Detail the operational circular, participating centres, submission dates, or web-link..."
               value={content}
-              onChange={(e) => setContent(e.target.value.slice(0, 4000))}
+              onChange={(e) => setContent(e.target.value)}
               className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-xs outline-none focus:ring-2 focus:ring-rose-500"
-              maxLength={4000}
-              />
+            />
           </div>
 
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2">

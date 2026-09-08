@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { MOCK_PERSONNEL_DIRECTORY } from '../../data/mockData';
-import { safeImageUrl, safeLine, safeMailto } from '../../lib/security';
 import { 
   GraduationCap, 
   BookOpen, 
@@ -91,10 +90,9 @@ export const PersonnelProfilesDirectory: React.FC = () => {
             type="text"
             placeholder="Search by faculty name, trainee, institute, thesis topic, or skill..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value.slice(0, 4000))}
+            onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none"
-            maxLength={4000}
-            />
+          />
         </div>
 
         <div className="flex items-center gap-2">
@@ -130,7 +128,7 @@ export const PersonnelProfilesDirectory: React.FC = () => {
                 <div className="flex items-start justify-between gap-3 mb-4">
                   <div className="flex items-center gap-3">
                     <img 
-                      src={safeImageUrl(person.avatar)} 
+                      src={person.avatar} 
                       alt={person.fullName}
                       className="w-12 h-12 rounded-2xl object-cover border-2 border-slate-200 dark:border-slate-700 shadow-sm shrink-0"
                     />
@@ -260,7 +258,7 @@ export const PersonnelProfilesDirectory: React.FC = () => {
             <div className="p-6 bg-gradient-to-r from-rose-500 to-red-600 text-white flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <img 
-                  src={safeImageUrl(selectedPerson.avatar)} 
+                  src={selectedPerson.avatar} 
                   alt={selectedPerson.fullName}
                   className="w-16 h-16 rounded-2xl object-cover border-2 border-white/80 shadow-md shrink-0"
                 />
@@ -407,7 +405,7 @@ export const PersonnelProfilesDirectory: React.FC = () => {
               <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-[11px] text-slate-600 dark:text-slate-400">
                 <div>
                   <span>Official Email: </span>
-                  <a href={safeMailto(selectedPerson.email) || undefined} className="text-rose-600 dark:text-rose-400 font-semibold hover:underline">
+                  <a href={`mailto:${selectedPerson.email}`} className="text-rose-600 dark:text-rose-400 font-semibold hover:underline">
                     {selectedPerson.email}
                   </a>
                 </div>

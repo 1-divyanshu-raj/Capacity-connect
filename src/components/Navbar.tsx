@@ -15,7 +15,6 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { sound } from '../utils/soundEffects';
-import { safeImageUrl } from '../lib/security';
 
 interface NavbarProps {
   currentUser: UserProfile;
@@ -206,7 +205,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <div className="relative shrink-0">
                   <img 
-                    src={safeImageUrl(currentUser.avatar)} 
+                    src={currentUser.avatar} 
                     alt={currentUser.fullName} 
                     className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-white dark:border-slate-700 shadow-sm ring-1 ring-slate-200 dark:ring-slate-800 group-hover:border-rose-300 transition"
                   />
@@ -340,7 +339,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* User Info Card */}
           <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700">
             <img 
-              src={safeImageUrl(currentUser.avatar)} 
+              src={currentUser.avatar} 
               alt={currentUser.fullName} 
               className="w-12 h-12 rounded-full object-cover border-2 border-rose-500 shadow-sm shrink-0"
             />

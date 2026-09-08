@@ -24,7 +24,6 @@ import {
   Info
 } from 'lucide-react';
 import { sound } from '../../utils/soundEffects';
-import { checkUpload, safeLine, secureId } from '../../lib/security';
 
 interface AssignmentUploadCenterProps {
   traineeName: string;
@@ -56,11 +55,15 @@ export const AssignmentUploadCenter: React.FC<AssignmentUploadCenterProps> = ({
   const allowedExtensions = ['.pdf', '.csv', '.json', '.py', '.ipynb'];
 
   const validateFile = (file: File): boolean => {
-    // Shared policy: extension allowlist + double-extension rejection
-    // (`analysis.pdf.js`), hidden files, empty files and the 50 MB ceiling.
-    const verdict = checkUpload(file, { allowedExtensions, maxBytes: 50 * 1024 * 1024 });
-    if (!verdict.ok) {
-      alert(verdict.reason ?? 'That file cannot be accepted.');
+    const fileName = file.name.toLowerCase();
+    const isValidExt = allowedExtensions.some((ext) => fileName.endsWith(ext));
+    if (!isValidExt) {
+      alert(`Invalid file type. Supported extensions are: ${allowedExtensions.join(', ')}`);
+      return false;
+    }
+    // Limit to 50MB
+    if (file.size > 50 * 1024 * 1024) {
+      alert('File size exceeds the 50MB benchmark task limit.');
       return false;
     }
     return true;
@@ -97,8 +100,6 @@ export const AssignmentUploadCenter: React.FC<AssignmentUploadCenterProps> = ({
       if (validateFile(file)) {
         setSelectedFile(file);
       }
-      // Reset so the same file can be re-selected after a rejection.
-      e.target.value = '';
     }
   };
 
@@ -118,7 +119,7 @@ export const AssignmentUploadCenter: React.FC<AssignmentUploadCenterProps> = ({
       const ext = ('.' + name.split('.').pop()) as '.pdf' | '.csv' | '.json' | '.py' | '.ipynb';
 
       const newSub: ScientificAssignmentSubmission = {
-        id: secureId('sub', 4).toLowerCase(),
+        id: `sub-${Date.now().toString().slice(-4)}`,
         taskId: activeTask.taskId,
         taskTitle: activeTask.title,
         courseTitle: activeTask.courseTitle,
