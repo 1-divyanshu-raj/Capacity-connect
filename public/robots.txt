@@ -1,0 +1,5 @@
+# CAPACITY CONNECT is an internal Ministry of Earth Sciences portal.
+# The JSON API is never meant to be crawled or cached by intermediaries.
+User-agent: *
+Disallow: /api/
+Crawl-delay: 10

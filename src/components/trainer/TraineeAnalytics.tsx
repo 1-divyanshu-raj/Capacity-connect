@@ -78,9 +78,10 @@ export const TraineeAnalytics: React.FC<TraineeAnalyticsProps> = ({ trainees }) 
             type="text"
             placeholder="Search trainee by name, institute, or active module..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => setSearchQuery(e.target.value.slice(0, 4000))}
             className="w-full pl-10 pr-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none"
-          />
+            maxLength={4000}
+            />
         </div>
 
         <div className="flex items-center gap-2">

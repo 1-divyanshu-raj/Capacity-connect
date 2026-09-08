@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { safeImageUrl } from '../../lib/security';
 import { Course } from '../../types';
 import { 
   BookOpen, 
@@ -77,9 +78,10 @@ export const TrainerCoursesView: React.FC<TrainerCoursesViewProps> = ({ courses 
             type="text"
             placeholder="Search faculty modules by title, topic, or institute..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => setSearchQuery(e.target.value.slice(0, 4000))}
             className="w-full pl-10 pr-4 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none"
-          />
+            maxLength={4000}
+            />
         </div>
 
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
@@ -110,7 +112,7 @@ export const TrainerCoursesView: React.FC<TrainerCoursesViewProps> = ({ courses 
             {/* Header image */}
             <div className="relative h-44 overflow-hidden bg-slate-900">
               <img
-                src={course.thumbnail}
+                src={safeImageUrl(course.thumbnail)}
                 alt={course.title}
                 className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
               />

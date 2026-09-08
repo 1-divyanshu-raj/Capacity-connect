@@ -42,3 +42,43 @@ Ensure you have [Node.js](https://nodejs.org/) installed on your system (v18.0 o
 
 
 
+
+---
+
+## 🔐 Security
+
+The portal runs its security controls on the server, so the UI keeps its
+behaviour while nothing sensitive is decided in the browser.
+
+- **Sign-in is server-authoritative.** All three steps — password, OTP, device
+  biometric — are verified by the API; the role lives only in a signed,
+  HttpOnly, `SameSite=Strict` session cookie. Editing client state cannot grant
+  admin access.
+- **No credentials in the bundle.** Demo accounts are served by
+  `GET /api/auth/demo-credentials` while `DEMO_MODE=true`, and that endpoint
+  returns 404 in production. Set `DEMO_MODE=false` before going live.
+- **Certificates are signed.** `POST /api/certificates/issue` returns an
+  HMAC-sealed serial and integrity hash; `GET /api/certificates/verify` detects
+  any tampering with score, name or serial.
+- **Input is validated in depth.** 1 MiB body cap, field-level length and
+  character rules, bounded object depth and key count, prototype-pollution
+  filtering, plus staged rate limits and account lockout.
+- **Hard response headers.** Nonce-based CSP (no `unsafe-inline`),
+  `nosniff`, HSTS in production, referrer and permissions policies,
+  frame/origin isolation, and `no-store` on API responses.
+- **Nothing internal is served over HTTP** — server sources, project manifests,
+  config files, dotfiles and source maps all 404, in dev as well as in prod.
+- **Dependencies stay clean:** `npm audit --omit=dev` reports 0 vulnerabilities,
+  and the AI proxy runs on the `express` already in the stack.
+
+Run the built-in verification suite (50+ assertions over headers, disclosure,
+auth, CSRF, rate limits and input validation):
+
+```bash
+npm run build
+npm run security:check -- --built
+```
+
+Full findings, the STRIDE table, accepted risks and the deployment checklist
+are in **[SECURITY.md](SECURITY.md)**. Please report vulnerabilities via
+`/.well-known/security.txt` rather than a public issue.

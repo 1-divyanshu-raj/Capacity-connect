@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { secureId } from '../../lib/security';
 import { Assessment, QuizResult } from '../../types';
 import confetti from 'canvas-confetti';
 import { 
@@ -85,7 +86,8 @@ export const AssessmentPlayer: React.FC<AssessmentPlayerProps> = ({
 
     const scorePercentage = Math.round((correctCount / assessment.questions.length) * 100);
     const passed = scorePercentage >= assessment.passingPercentage;
-    const certId = passed ? `MOES-CERT-${Date.now().toString().slice(-6)}` : undefined;
+    // Provisional serial: the signed one is minted by the portal API in CertificateModal.
+    const certId = passed ? secureId('MOES-CERT', 12) : undefined;
 
     const result: QuizResult = {
       assessmentId: assessment.id,
