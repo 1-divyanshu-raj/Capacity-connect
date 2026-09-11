@@ -219,7 +219,7 @@ export default function App() {
             <span>•</span>
             <span>Ministry of Earth Sciences | IMD - Training Division</span>
             <span>•</span>
-            <span className="font-mono text-rose-700 dark:text-rose-400 font-medium">SIH26075</span>
+            <span className="font-mono text-rose-700 dark:text-rose-400 font-medium">Govt. of India</span>
           </div>
           <div className="flex items-center gap-4 text-slate-400 dark:text-slate-500">
             <span className="hover:text-slate-700 dark:hover:text-slate-300 cursor-pointer">Security Standards</span>

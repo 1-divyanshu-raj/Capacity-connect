@@ -179,7 +179,7 @@ export const CertificateModal: React.FC<CertificateModalProps> = ({
             <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             Cryptographically sealed and registered in MoES National Trainee Repository
           </span>
-          <span className="font-mono text-[11px] text-rose-700 dark:text-rose-400">SIH26075-MOES-VERIFIED</span>
+          <span className="font-mono text-[11px] text-rose-700 dark:text-rose-400">MOES-CBC-2026-VERIFIED</span>
         </div>
 
       </div>

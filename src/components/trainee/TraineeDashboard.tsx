@@ -20,6 +20,7 @@ import { AICoPilotWidget } from './AICoPilotWidget';
 import { AssignmentUploadCenter } from './AssignmentUploadCenter';
 import { PresentationUploadCenter } from './PresentationUploadCenter';
 import { DiscussionForums } from '../common/DiscussionForums';
+import { CompetencyDecayEngine } from './CompetencyDecayEngine';
 import { 
   BookOpen, 
   UserCheck, 
@@ -34,7 +35,8 @@ import {
   Database,
   Video,
   MessageSquare,
-  ShieldCheck
+  ShieldCheck,
+  BrainCircuit
 } from 'lucide-react';
 
 interface TraineeDashboardProps {
@@ -83,7 +85,7 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
     }
   };
 
-  const [activeTab, setActiveTab] = useState<'courses' | 'tasks' | 'presentations' | 'assessments' | 'forums' | 'profile'>('courses');
+  const [activeTab, setActiveTab] = useState<'courses' | 'decay' | 'tasks' | 'presentations' | 'assessments' | 'forums' | 'profile'>('courses');
   const [selectedCourseForView, setSelectedCourseForView] = useState<Course | null>(null);
   
   // Active assessment being taken
@@ -214,6 +216,20 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
         </button>
 
         <button
+          id="trainee-tab-decay"
+          type="button"
+          onClick={() => { setActiveTab('decay'); setActiveAssessmentId(null); }}
+          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeTab === 'decay' && !activeAssessmentId
+              ? 'bg-slate-900 dark:bg-rose-600 text-white shadow-sm'
+              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700'
+          }`}
+        >
+          <BrainCircuit className="w-4 h-4 text-rose-500 dark:text-rose-300" />
+          <span>Competency Decay Engine (C_k(t))</span>
+        </button>
+
+        <button
           id="trainee-tab-tasks"
           type="button"
           onClick={() => { setActiveTab('tasks'); setActiveAssessmentId(null); }}
@@ -299,6 +315,8 @@ export const TraineeDashboard: React.FC<TraineeDashboardProps> = ({
           onSelectCourse={(course) => setSelectedCourseForView(course)}
           onTakeAssessment={handleStartAssessment}
         />
+      ) : activeTab === 'decay' ? (
+        <CompetencyDecayEngine currentOfficerName={currentUser.fullName} />
       ) : activeTab === 'tasks' ? (
         <AssignmentUploadCenter
           traineeId={currentUser.id}

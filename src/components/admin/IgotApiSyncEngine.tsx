@@ -77,9 +77,9 @@ const INITIAL_LOGS: ApiPayloadLog[] = [
     service: 'DoPT National Certificate Repository',
     recordCount: 1,
     ncfCode: 'NCF-COMP-DWR-04',
-    payloadSummary: 'Issued cryptographic competency seal for SIH26075-MOES-VERIFIED',
+    payloadSummary: 'Issued cryptographic competency seal for MOES-CBC-2026-VERIFIED',
     fullPayload: {
-      certificateId: 'SIH26075-MOES-VERIFIED-9812',
+      certificateId: 'MOES-CBC-2026-VERIFIED-9812',
       recipientName: 'Dr. Priya Sharma',
       institute: 'India Meteorological Department (IMD)',
       grade: 'Distinction (96%)',
@@ -87,7 +87,7 @@ const INITIAL_LOGS: ApiPayloadLog[] = [
       timestampUtc: '2026-03-31T06:05:10Z'
     },
     responsePayload: {
-      ncrCredentialUrl: 'https://verify.igotkarmayogi.gov.in/cert/SIH26075-MOES-VERIFIED-9812',
+      ncrCredentialUrl: 'https://verify.igotkarmayogi.gov.in/cert/MOES-CBC-2026-VERIFIED-9812',
       qrVerificationSignature: 'SIGN-GOV-IMD-CBC-2026'
     }
   },

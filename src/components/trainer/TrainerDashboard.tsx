@@ -20,6 +20,7 @@ import { TraineeAnalytics } from './TraineeAnalytics';
 import { TrainerCoursesView } from './TrainerCoursesView';
 import { PresentationReviewSuite } from './PresentationReviewSuite';
 import { AssignmentAutoGradingEngine } from './AssignmentAutoGradingEngine';
+import { ExplainableTrainerMatcher } from './ExplainableTrainerMatcher';
 import { 
   FolderGit2, 
   Sparkles, 
@@ -27,10 +28,11 @@ import {
   BarChart3, 
   BookOpen, 
   Award, 
-  Users,
-  Compass,
-  Video,
-  Cpu
+  Users, 
+  Compass, 
+  Video, 
+  Cpu,
+  Calculator
 } from 'lucide-react';
 
 interface TrainerDashboardProps {
@@ -64,7 +66,7 @@ export const TrainerDashboard: React.FC<TrainerDashboardProps> = ({
   onUpdatePresentationSubmission = () => {},
   onSignOut,
 }) => {
-  const [activeTab, setActiveTab] = useState<'presentations' | 'autograde' | 'courses' | 'library' | 'generator' | 'competency' | 'analytics'>('presentations');
+  const [activeTab, setActiveTab] = useState<'presentations' | 'autograde' | 'courses' | 'library' | 'generator' | 'competency' | 'matcher' | 'analytics'>('presentations');
 
   const totalEnrolledInCourses = courses.reduce((sum, c) => sum + c.enrolledCount, 0);
   const pendingPresentations = presentationSubmissions.filter((p) => p.status === 'Submitted - In Review').length;
@@ -195,6 +197,20 @@ export const TrainerDashboard: React.FC<TrainerDashboardProps> = ({
         </button>
 
         <button
+          id="trainer-tab-matcher"
+          type="button"
+          onClick={() => setActiveTab('matcher')}
+          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeTab === 'matcher'
+              ? 'bg-slate-900 dark:bg-rose-600 text-white shadow-sm'
+              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700'
+          }`}
+        >
+          <Calculator className="w-4 h-4 text-rose-400" />
+          <span>Faculty Matcher & Workload (S_p)</span>
+        </button>
+
+        <button
           id="trainer-tab-analytics"
           type="button"
           onClick={() => setActiveTab('analytics')}
@@ -249,6 +265,10 @@ export const TrainerDashboard: React.FC<TrainerDashboardProps> = ({
         <CompetencyMapping
           competencies={competencies}
         />
+      )}
+
+      {activeTab === 'matcher' && (
+        <ExplainableTrainerMatcher currentTrainerName={currentUser.fullName} />
       )}
 
       {activeTab === 'analytics' && (

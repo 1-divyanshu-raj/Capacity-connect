@@ -1,6 +1,6 @@
 {
   "name": "CAPACITY CONNECT",
-  "description": "Digital Capacity Building & Learning Management Portal for the Ministry of Earth Sciences (MoES / IMD) - SIH Problem Statement SIH26075",
+  "description": "Digital Capacity Building & Learning Management Portal for the Ministry of Earth Sciences (MoES / IMD), Government of India",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

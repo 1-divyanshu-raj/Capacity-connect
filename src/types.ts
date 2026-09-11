@@ -406,3 +406,84 @@ export interface DiscussionTopic {
   replies: DiscussionReply[];
 }
 
+// Supabase Database Models
+export interface SupabaseTrainee {
+  id: string;
+  name: string;
+  department: string;
+  baseline_skill: number;
+  days_unpracticed: number;
+  created_at?: string;
+}
+
+export interface SupabaseTrainer {
+  id: string;
+  name: string;
+  specialization: string;
+  competency_score: number;
+  rating: number;
+  workload_hours: number;
+  created_at?: string;
+}
+
+// Dynamic Competency Intelligence (Skill Decay)
+// C_k(t) = C_0 * e^(-lambda * t)
+export interface SkillDecayModel {
+  skillName: string;
+  domain: string;
+  baselineSkill: number; // C_0 (0-100)
+  daysUnpracticed: number; // t
+  decayConstant: number; // lambda
+  currentScore: number; // C_k(t)
+  retentionCategory: 'Mastery' | 'Competent' | 'Degrading' | 'Critical Gap';
+  halfLifeDays: number;
+  recommendedRefresher: string;
+  recommendedModuleId?: string;
+  microDrillTitle: string;
+}
+
+// Explainable Trainer Matching Multi-Criteria Scoring Model
+// S_p = alpha * C_p + beta * E_p - gamma * W_p
+export interface TrainerMatchScore {
+  trainer: SupabaseTrainer;
+  competencyScore: number; // C_p
+  pedagogicalRating: number; // E_p
+  pedagogicalNormalized: number; // E_p scaled 0-100
+  workloadHours: number; // W_p
+  compositeScore: number; // S_p
+  rank: number;
+  isOptimal: boolean;
+  matchRationale: string;
+}
+
+// Mission Karmayogi & FRAC Taxonomy Sync
+export interface FracCompetencyItem {
+  id: string;
+  code: string;
+  competencyArea: string;
+  roleMapping: string;
+  activityDescription: string;
+  proficiencyLevel: 1 | 2 | 3 | 4 | 5;
+  iGotCreditPoints: number;
+  xApiVerb: string;
+  lastSyncedTimestamp: string;
+  syncStatus: 'SYNCED' | 'PENDING' | 'VALIDATING';
+  moesCadre: string;
+}
+
+export interface XApiStatementRecord {
+  id: string;
+  actorEmail: string;
+  actorName: string;
+  verbId: string;
+  verbDisplay: string;
+  activityId: string;
+  activityName: string;
+  scoreRaw: number;
+  scoreScaled: number;
+  success: boolean;
+  timestamp: string;
+  authority: string;
+  checksum: string;
+}
+

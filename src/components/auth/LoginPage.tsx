@@ -628,6 +628,71 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                   </div>
                 )}
 
+                {/* OAuth Single Sign-On Options for All Roles */}
+                <div className="space-y-2 mb-4">
+                  <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+                    <span>OAuth Verification ({selectedRole.toUpperCase()})</span>
+                    <span className="text-[10px] text-rose-600 dark:text-rose-400 font-mono">Instant SSO Clearance</span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {/* Google OAuth */}
+                    <button
+                      id="login-sso-google-btn"
+                      type="button"
+                      onClick={() => handleSSOSignIn('Google')}
+                      className="py-2 px-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                      title="Sign in with Google"
+                    >
+                      <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/>
+                        <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"/>
+                        <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.04 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                        <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                      </svg>
+                      <span className="truncate">Google</span>
+                    </button>
+
+                    {/* Apple OAuth */}
+                    <button
+                      id="login-sso-apple-btn"
+                      type="button"
+                      onClick={() => handleSSOSignIn('Apple')}
+                      className="py-2 px-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                      title="Sign in with Apple"
+                    >
+                      <svg className="w-3.5 h-3.5 fill-current text-slate-900 dark:text-white shrink-0" viewBox="0 0 170 170">
+                        <path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.69-3.08-7.7-7.92-12.04-14.54-6.85-10.4-12.16-21.95-15.93-34.66-3.77-12.71-5.66-24.81-5.66-36.31 0-15.09 3.8-27.81 11.39-38.16 7.59-10.35 17.1-15.65 28.53-15.9 4.8 0 10.15 1.25 16.06 3.75 5.91 2.5 9.77 3.82 11.59 3.96 1.45-.14 5.48-1.5 12.09-4.08 6.61-2.58 12.04-3.73 16.3-3.46 12.61.64 22.75 5.38 30.42 14.22-11.05 6.72-16.48 15.82-16.3 27.32.18 9.07 3.71 16.92 10.59 23.55 6.89 6.62 15.08 10.41 24.58 11.37-2.09 6.26-4.63 12.55-7.62 18.87zM119.22 33.05c0-7.39 2.66-14.47 7.98-21.23 5.32-6.76 11.89-11.17 19.72-13.22.82 6.94-.8 13.9-4.86 20.89-4.06 6.99-9.97 11.59-17.72 13.8-.73-.08-2.06-.17-3.99-.24h-1.13z"/>
+                      </svg>
+                      <span className="truncate">Apple</span>
+                    </button>
+
+                    {/* Microsoft OAuth */}
+                    <button
+                      id="login-sso-microsoft-btn"
+                      type="button"
+                      onClick={() => handleSSOSignIn('Microsoft')}
+                      className="py-2 px-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                      title="Sign in with Microsoft"
+                    >
+                      <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 21 21">
+                        <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+                        <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+                        <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+                        <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+                      </svg>
+                      <span className="truncate">Microsoft</span>
+                    </button>
+                  </div>
+
+                  <div className="relative flex items-center justify-center my-3">
+                    <div className="border-t border-slate-200 dark:border-slate-700 w-full" />
+                    <span className="bg-white dark:bg-slate-900 px-2.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider absolute">
+                      Or Standard MoES Credentials
+                    </span>
+                  </div>
+                </div>
+
                 {/* Form: Step 1 Password Method */}
                 <form onSubmit={handleCredentialsSubmit} className="space-y-3.5">
                   <div className="space-y-1">

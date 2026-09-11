@@ -6,6 +6,8 @@ import { AnnouncementCenter } from './AnnouncementCenter';
 import { PersonnelProfilesDirectory } from './PersonnelProfilesDirectory';
 import { LivePresenceHUD } from './LivePresenceHUD';
 import { IgotApiSyncEngine } from './IgotApiSyncEngine';
+import { MissionKarmayogiSyncPanel } from './MissionKarmayogiSyncPanel';
+import { ExplainableTrainerMatcher } from '../trainer/ExplainableTrainerMatcher';
 import { 
   ShieldAlert, 
   BarChart3, 
@@ -17,7 +19,9 @@ import {
   Award,
   Activity,
   Radio,
-  RefreshCw
+  RefreshCw,
+  Calculator,
+  Cpu
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -43,7 +47,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onDeleteAnnouncement,
   onSignOut,
 }) => {
-  const [activeTab, setActiveTab] = useState<'presence' | 'analytics' | 'sync' | 'approvals' | 'directory' | 'announcements'>('presence');
+  const [activeTab, setActiveTab] = useState<'presence' | 'analytics' | 'sync' | 'karmayogi' | 'matcher' | 'approvals' | 'directory' | 'announcements'>('presence');
 
   const pendingCount = approvals.filter((a) => a.status === 'Pending').length;
 
@@ -138,6 +142,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </button>
 
         <button
+          id="admin-tab-karmayogi"
+          type="button"
+          onClick={() => setActiveTab('karmayogi')}
+          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeTab === 'karmayogi'
+              ? 'bg-slate-900 dark:bg-rose-600 text-white shadow-sm'
+              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700'
+          }`}
+        >
+          <Building2 className="w-4 h-4 text-rose-500" />
+          <span>Mission Karmayogi (FRAC / xAPI)</span>
+          <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+        </button>
+
+        <button
+          id="admin-tab-matcher"
+          type="button"
+          onClick={() => setActiveTab('matcher')}
+          className={`min-h-[44px] px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeTab === 'matcher'
+              ? 'bg-slate-900 dark:bg-rose-600 text-white shadow-sm'
+              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700'
+          }`}
+        >
+          <Calculator className="w-4 h-4 text-amber-500" />
+          <span>Faculty Matcher (S_p Score)</span>
+        </button>
+
+        <button
           id="admin-tab-approvals"
           type="button"
           onClick={() => setActiveTab('approvals')}
@@ -198,7 +231,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {activeTab === 'sync' && (
-        <IgotApiSyncEngine />
+        <div className="space-y-6">
+          <IgotApiSyncEngine />
+          <MissionKarmayogiSyncPanel />
+        </div>
+      )}
+
+      {activeTab === 'karmayogi' && (
+        <MissionKarmayogiSyncPanel />
+      )}
+
+      {activeTab === 'matcher' && (
+        <ExplainableTrainerMatcher />
       )}
 
       {activeTab === 'approvals' && (

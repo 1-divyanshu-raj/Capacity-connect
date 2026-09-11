@@ -1306,7 +1306,7 @@ export const INITIAL_ANNOUNCEMENTS: GlobalAnnouncement[] = [
   },
   {
     id: 'ann-2',
-    title: 'SIH Problem Statement SIH26075: CAPACITY CONNECT Portal Deployed Live',
+    title: 'National Deployment: CAPACITY CONNECT MoES Portal Operational Across All Centres',
     category: 'achievement',
     content: 'Digital Capacity Building & Learning Management Portal deployed for all five MoES institutes (IMD, NCMRWF, INCOIS, IITM, NCPOR) with verified role-based access.',
     date: '03 September 2026',
