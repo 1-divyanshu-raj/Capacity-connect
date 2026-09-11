@@ -20,6 +20,8 @@ export interface UserProfile {
   // iGOT Karmayogi & National Competency Framework Alignment
   igotKarmaPoints?: number;
   ncfId?: string;
+  // Biometric & Face Descriptor Vector (128-d vector for face matching)
+  face_descriptor?: number[];
   // Trainer specific
   specialization?: string;
   yearsOfExperience?: number;

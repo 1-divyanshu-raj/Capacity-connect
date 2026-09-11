@@ -36,10 +36,56 @@ import { TraineeDashboard } from './components/trainee/TraineeDashboard';
 import { TrainerDashboard } from './components/trainer/TrainerDashboard';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { useTheme } from './hooks';
+import { supabase } from './lib/supabase';
 
 export default function App() {
-  // Authentication State
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
+  // Authentication State with Persistent Login Memory
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    try {
+      const savedUserStr = localStorage.getItem('moes_portal_active_user_session');
+      if (savedUserStr) {
+        const parsed = JSON.parse(savedUserStr);
+        if (parsed && parsed.id && parsed.role) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read cached session:', e);
+    }
+    return null;
+  });
+
+  // Retain active session across browser refreshes & sync with supabase.auth.onAuthStateChange
+  useEffect(() => {
+    const { data: authSubscription } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        localStorage.removeItem('moes_portal_active_user_session');
+        setCurrentUser(null);
+      } else if (session?.user && !currentUser) {
+        try {
+          const cached = localStorage.getItem('moes_portal_active_user_session');
+          if (cached) {
+            setCurrentUser(JSON.parse(cached));
+          }
+        } catch {
+          // ignore
+        }
+      }
+    });
+
+    return () => {
+      authSubscription?.subscription?.unsubscribe();
+    };
+  }, [currentUser]);
+
+  // Persist currentUser to localStorage whenever it changes
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('moes_portal_active_user_session', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('moes_portal_active_user_session');
+    }
+  }, [currentUser]);
 
   // Light / Dark Theme Hook
   const { theme, toggleTheme } = useTheme();
@@ -62,8 +108,10 @@ export default function App() {
     setCurrentUser(updated);
   };
 
-  // Sign out handler (returns to Login Page where role switching is authorized)
+  // Sign out handler (clears persistent session and resets state)
   const handleSignOut = () => {
+    localStorage.removeItem('moes_portal_active_user_session');
+    supabase.auth.signOut().catch(() => {});
     setCurrentUser(null);
   };
 
