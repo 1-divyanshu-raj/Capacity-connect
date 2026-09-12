@@ -1,15 +1,47 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 import dotenv from 'dotenv';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://deyyyyreixyppwfyhtao.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_UdGgYIQJ56CtC4e2oW7DTQ_VGBWmUWS';
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const PROFILES_FILE = path.join(process.cwd(), 'data', 'registered_profiles.json');
+
+function getStoredProfiles(): any[] {
+  try {
+    if (fs.existsSync(PROFILES_FILE)) {
+      const content = fs.readFileSync(PROFILES_FILE, 'utf-8');
+      return JSON.parse(content);
+    }
+  } catch (err) {
+    console.warn('Error reading stored profiles:', err);
+  }
+  return [];
+}
+
+function saveStoredProfiles(profiles: any[]): void {
+  try {
+    const dir = path.dirname(PROFILES_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(PROFILES_FILE, JSON.stringify(profiles, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Error saving stored profiles:', err);
+  }
+}
 
 // Shared Gemini client lazy initializer
 let genAI: GoogleGenAI | null = null;
@@ -37,6 +69,115 @@ app.get('/api/health', (req, res) => {
     portal: 'CAPACITY CONNECT - MoES / IMD',
     hasGeminiKey: !!process.env.GEMINI_API_KEY,
   });
+});
+
+// Profiles API: Get all registered profiles (Supabase public.profiles + persisted registered profiles)
+app.get('/api/profiles', async (req, res) => {
+  try {
+    const stored = getStoredProfiles();
+    
+    // Fetch live Supabase public.profiles
+    let supabaseProfiles: any[] = [];
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*');
+      if (!error && data) {
+        supabaseProfiles = data;
+      }
+    } catch (dbErr) {
+      console.warn('Supabase query in /api/profiles:', dbErr);
+    }
+
+    // Merge: stored profiles take precedence for local overrides / newly registered faces
+    const profileMap = new Map<string, any>();
+    supabaseProfiles.forEach((p) => {
+      const key = (p.email || p.id || '').toLowerCase();
+      if (key) profileMap.set(key, p);
+    });
+    stored.forEach((p) => {
+      const key = (p.email || p.id || '').toLowerCase();
+      if (key) {
+        const existing = profileMap.get(key) || {};
+        profileMap.set(key, { ...existing, ...p });
+      }
+    });
+
+    const combined = Array.from(profileMap.values());
+    res.json({ profiles: combined, count: combined.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch profiles' });
+  }
+});
+
+// Profiles API: Register or update a user profile with 128-float face descriptor vector
+app.post('/api/profiles', async (req, res) => {
+  try {
+    const newProfile = req.body;
+    if (!newProfile || (!newProfile.email && !newProfile.id)) {
+      return res.status(400).json({ error: 'Profile email or id is required' });
+    }
+
+    const email = (newProfile.email || '').toLowerCase();
+    const id = newProfile.id || `MOES-${Date.now().toString().slice(-6)}`;
+
+    // Prepare profile record
+    const stored = getStoredProfiles();
+    const existingIdx = stored.findIndex(
+      (p) => (p.email && p.email.toLowerCase() === email) || (p.id && p.id === id)
+    );
+
+    const record = {
+      id,
+      email,
+      full_name: newProfile.fullName || newProfile.full_name || 'Registered Personnel',
+      role: newProfile.role || 'trainee',
+      institute: newProfile.institute || 'Ministry of Earth Sciences',
+      designation: newProfile.designation || "Scientist 'B' Probationer",
+      avatar_url: newProfile.avatar || newProfile.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+      face_registered: Array.isArray(newProfile.face_descriptor) && newProfile.face_descriptor.length >= 128,
+      face_descriptor: newProfile.face_descriptor,
+      password: newProfile.password || undefined,
+      updated_at: new Date().toISOString(),
+      created_at: existingIdx >= 0 ? stored[existingIdx].created_at : new Date().toISOString()
+    };
+
+    if (existingIdx >= 0) {
+      stored[existingIdx] = { ...stored[existingIdx], ...record };
+    } else {
+      stored.push(record);
+    }
+
+    saveStoredProfiles(stored);
+
+    // Also attempt write to Supabase public.profiles table
+    if (record.face_descriptor && Array.isArray(record.face_descriptor)) {
+      const vectorLiteral = `[${record.face_descriptor.map((v: number) => Number((v || 0).toFixed(6))).join(',')}]`;
+      try {
+        const { error: upsertErr } = await supabase
+          .from('profiles')
+          .upsert({
+            id: record.id,
+            email: record.email,
+            full_name: record.full_name,
+            role: record.role,
+            avatar_url: record.avatar_url,
+            face_registered: true,
+            face_descriptor: vectorLiteral,
+            updated_at: new Date().toISOString()
+          });
+        if (upsertErr) {
+          console.warn('Supabase remote profiles upsert notice:', upsertErr.message);
+        }
+      } catch (sbErr) {
+        console.warn('Supabase remote profiles upsert warning:', sbErr);
+      }
+    }
+
+    res.json({ success: true, profile: record });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to save profile' });
+  }
 });
 
 // 2. Trainee AI Co-Pilot Chat

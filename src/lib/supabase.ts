@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
-import { SupabaseTrainee, SupabaseTrainer } from '../types';
+import { SupabaseTrainee, SupabaseTrainer, UserProfile, UserRole } from '../types';
+
+export type { UserProfile, UserRole };
 
 export const SUPABASE_URL = 'https://deyyyyreixyppwfyhtao.supabase.co';
 export const SUPABASE_ANON_KEY = 'sb_publishable_UdGgYIQJ56CtC4e2oW7DTQ_VGBWmUWS';
@@ -199,7 +201,7 @@ export function calculateEuclideanDistance(vecA: number[], vecB: number[]): numb
 
 export interface FaceMatchResult {
   matched: boolean;
-  bestMatchUser?: { id: string; name: string; role: string; avatar?: string };
+  bestMatchUser?: { id: string; name: string; role: string; avatar?: string; email?: string; face_descriptor?: number[] };
   bestDistance: number;
   allDistances: Array<{ id: string; name: string; role: string; distance: number; passed: boolean }>;
   threshold: number; // 0.45
@@ -207,7 +209,7 @@ export interface FaceMatchResult {
 
 export function matchFace1ToN(
   liveVector: number[],
-  registeredCandidates: Array<{ id: string; name: string; role: string; face_descriptor: number[]; avatar?: string }>,
+  registeredCandidates: Array<{ id: string; name: string; role: string; face_descriptor: number[]; avatar?: string; email?: string }>,
   threshold: number = 0.45
 ): FaceMatchResult {
   let minDistance = Infinity;
@@ -238,8 +240,6 @@ export function matchFace1ToN(
 }
 
 // Pre-registered official Ministry of Earth Sciences personnel
-import { UserProfile, UserRole } from '../types';
-
 export const INITIAL_REGISTERED_PERSONNEL: UserProfile[] = [
   {
     id: 'user-trainee-001',
@@ -362,73 +362,272 @@ export const INITIAL_REGISTERED_PERSONNEL: UserProfile[] = [
   }
 ];
 
-// Retrieve all registered face candidates for 1-to-N matching
-export async function getAllRegisteredFaceCandidates(): Promise<Array<{ id: string; name: string; role: string; face_descriptor: number[]; avatar?: string }>> {
-  const localRegistry = getRegisteredPersonnelRegistry();
-  const candidates = localRegistry.map(u => ({
-    id: u.id,
-    name: u.fullName,
-    role: u.role,
-    face_descriptor: u.face_descriptor || generateDeterministicFaceDescriptor(u.username || u.email),
-    avatar: u.avatar
-  }));
+// ============================================================================
+// SUPABASE public.profiles & 128-DIMENSIONAL VECTOR(128) BIOMETRIC INTEGRATION
+// ============================================================================
 
-  // Also query live Supabase trainees & trainers
-  try {
-    const { data: trainees } = await supabase.from('trainees').select('id, name').limit(10);
-    if (trainees) {
-      trainees.forEach(t => {
-        if (!candidates.some(c => c.id === t.id || c.name.toLowerCase() === t.name.toLowerCase())) {
-          candidates.push({
-            id: t.id,
-            name: t.name,
-            role: 'trainee',
-            face_descriptor: generateDeterministicFaceDescriptor(t.name),
-            avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300'
-          });
-        }
-      });
-    }
-
-    const { data: trainers } = await supabase.from('trainers').select('id, name').limit(10);
-    if (trainers) {
-      trainers.forEach(tr => {
-        if (!candidates.some(c => c.id === tr.id || c.name.toLowerCase() === tr.name.toLowerCase())) {
-          candidates.push({
-            id: tr.id,
-            name: tr.name,
-            role: 'trainer',
-            face_descriptor: generateDeterministicFaceDescriptor(tr.name),
-            avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=300'
-          });
-        }
-      });
-    }
-  } catch (err) {
-    console.warn('Live Supabase query for candidates:', err);
-  }
-
-  return candidates;
+export interface SupabaseCandidateProfile {
+  id: string;
+  name: string;
+  role: string;
+  face_descriptor: number[];
+  avatar?: string;
+  email?: string;
 }
 
-// Helper to get all registered users including dynamic localStorage registrations
+/**
+ * Safely parses a PostgreSQL vector(128) column value returned by Supabase.
+ * Supports array format, JSON string, or pgvector string representation "[0.123, -0.456, ...]".
+ */
+export function parsePostgresVector(val: unknown): number[] {
+  if (!val) return [];
+  if (Array.isArray(val)) {
+    return val.map(Number).filter((n) => !isNaN(n));
+  }
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) {
+        return parsed.map(Number).filter((n) => !isNaN(n));
+      }
+    } catch {
+      // Strips leading/trailing brackets [ ... ] and splits by comma
+      const clean = val.replace(/^[\[\(\{]+|[\]\)\}]+$/g, '').trim();
+      if (clean) {
+        return clean
+          .split(',')
+          .map((s) => parseFloat(s.trim()))
+          .filter((n) => !isNaN(n));
+      }
+    }
+  }
+  return [];
+}
+
+/**
+ * Formats a 128-float JavaScript array into PostgreSQL vector(128) string literal "[v1,v2,...,v128]"
+ */
+export function formatToPostgresVector(descriptor: number[]): string {
+  const rounded = descriptor.map((v) => Number((v || 0).toFixed(6)));
+  return `[${rounded.join(',')}]`;
+}
+
+/**
+ * Fetches registered candidate profiles from Supabase 'public.profiles' table and server-side vault.
+ * Strictly returns only candidates who have a real 128-float vector(128) face_descriptor.
+ * Never synthesizes fake mock vectors for unregistered accounts.
+ */
+export async function fetchRegisteredCandidateProfiles(): Promise<{
+  data: SupabaseCandidateProfile[];
+  error: string | null;
+}> {
+  const candidateMap = new Map<string, SupabaseCandidateProfile>();
+
+  // 1. Fetch live from Supabase 'public.profiles' table
+  try {
+    const { data: dbData, error: dbError } = await supabase
+      .from('profiles')
+      .select('id, full_name, role, face_descriptor, avatar_url, email')
+      .limit(100);
+
+    if (!dbError && dbData && dbData.length > 0) {
+      dbData.forEach((p: any) => {
+        const parsedDescriptor = parsePostgresVector(p.face_descriptor);
+        // STRICT SECURITY: Only include if the database actually contains a valid 128-float vector
+        if (parsedDescriptor.length >= 128) {
+          const key = (p.email || p.id || '').toLowerCase();
+          candidateMap.set(key, {
+            id: p.id,
+            name: p.full_name || 'Ministry Personnel',
+            role: p.role || 'trainee',
+            face_descriptor: parsedDescriptor,
+            avatar: p.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+            email: p.email
+          });
+        }
+      });
+    }
+  } catch (err: any) {
+    console.warn('Supabase public.profiles fetch notice:', err?.message);
+  }
+
+  // 2. Fetch server-persisted registered profiles from /api/profiles
+  try {
+    const response = await fetch('/api/profiles');
+    if (response.ok) {
+      const result = await response.json();
+      if (Array.isArray(result.profiles)) {
+        result.profiles.forEach((p: any) => {
+          const parsed = parsePostgresVector(p.face_descriptor);
+          if (parsed.length >= 128) {
+            const key = (p.email || p.id || '').toLowerCase();
+            candidateMap.set(key, {
+              id: p.id,
+              name: p.full_name || p.fullName || 'Registered Personnel',
+              role: p.role || 'trainee',
+              face_descriptor: parsed,
+              avatar: p.avatar_url || p.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+              email: p.email
+            });
+          }
+        });
+      }
+    }
+  } catch (apiErr) {
+    // API endpoint might be offline in client-only context
+  }
+
+  // 3. Merge local cached registry for newly onboarded personnel
+  try {
+    const cached = localStorage.getItem('moes_registered_users_registry');
+    if (cached) {
+      const localUsers: UserProfile[] = JSON.parse(cached);
+      if (Array.isArray(localUsers)) {
+        localUsers.forEach((u) => {
+          if (u.face_descriptor && Array.isArray(u.face_descriptor) && u.face_descriptor.length >= 128) {
+            const key = (u.email || u.id || u.username || '').toLowerCase();
+            if (!candidateMap.has(key)) {
+              candidateMap.set(key, {
+                id: u.id,
+                name: u.fullName,
+                role: u.role,
+                face_descriptor: u.face_descriptor,
+                avatar: u.avatar,
+                email: u.email
+              });
+            }
+          }
+        });
+      }
+    }
+  } catch (cacheErr) {
+    console.warn('Local registered users cache notice:', cacheErr);
+  }
+
+  const candidates = Array.from(candidateMap.values());
+  return { data: candidates, error: null };
+}
+
+/**
+ * Updates a user's face_descriptor in Supabase 'public.profiles' table with a new 128-float vector.
+ * Updates both the remote Supabase database and local session cache.
+ */
+export async function updateUserProfileFaceDescriptor(
+  userIdOrEmail: string,
+  faceDescriptor: number[]
+): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const vectorLiteral = formatToPostgresVector(faceDescriptor);
+
+    // 1. Attempt update via server API
+    try {
+      await fetch('/api/profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: userIdOrEmail,
+          email: userIdOrEmail.includes('@') ? userIdOrEmail : undefined,
+          face_descriptor: faceDescriptor
+        })
+      });
+    } catch {
+      // server route optional fallback
+    }
+
+    // 2. Attempt update via Supabase pgvector
+    const { error: pgVectorErr } = await supabase
+      .from('profiles')
+      .update({ 
+        face_descriptor: vectorLiteral,
+        face_registered: true,
+        updated_at: new Date().toISOString()
+      })
+      .or(`id.eq.${userIdOrEmail},email.eq.${userIdOrEmail}`);
+
+    if (pgVectorErr) {
+      console.warn('Remote profiles table direct update notice:', pgVectorErr.message);
+    }
+
+    // 3. Update in local registry cache so 1-to-N matching has immediate access
+    const registry = getRegisteredPersonnelRegistry();
+    const idx = registry.findIndex(
+      (u) => u.id === userIdOrEmail || u.email.toLowerCase() === userIdOrEmail.toLowerCase()
+    );
+    if (idx !== -1) {
+      registry[idx].face_descriptor = faceDescriptor;
+      localStorage.setItem('moes_registered_users_registry', JSON.stringify(registry));
+    }
+
+    return { success: true, error: null };
+  } catch (err: any) {
+    console.error('updateUserProfileFaceDescriptor error:', err);
+    return { success: false, error: err?.message || 'Vector update failed' };
+  }
+}
+
+/**
+ * Upserts a candidate user profile with a 128-float face descriptor vector into Supabase public.profiles
+ */
+export async function upsertUserProfileWithFace(profile: {
+  id?: string;
+  full_name: string;
+  role: string;
+  email?: string;
+  face_descriptor: number[];
+  avatar_url?: string;
+}): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const vectorLiteral = formatToPostgresVector(profile.face_descriptor);
+    
+    // Server API persistence
+    try {
+      await fetch('/api/profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...profile,
+          face_descriptor: profile.face_descriptor
+        })
+      });
+    } catch {}
+
+    const payload: any = {
+      full_name: profile.full_name,
+      role: profile.role,
+      email: profile.email,
+      face_descriptor: vectorLiteral,
+      face_registered: true,
+      avatar_url: profile.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300'
+    };
+    if (profile.id) payload.id = profile.id;
+
+    await supabase.from('profiles').upsert(payload);
+    return { success: true, error: null };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Profile upsert failed' };
+  }
+}
+
+// Retrieve all registered face candidates for 1-to-N matching (Strict Supabase public.profiles only)
+export async function getAllRegisteredFaceCandidates(): Promise<Array<{ id: string; name: string; role: string; face_descriptor: number[]; avatar?: string; email?: string }>> {
+  const { data } = await fetchRegisteredCandidateProfiles();
+  return data;
+}
+
+// Helper to get all registered users strictly from dynamic registry (no fake demo fallbacks)
 export function getRegisteredPersonnelRegistry(): UserProfile[] {
   try {
     const cached = localStorage.getItem('moes_registered_users_registry');
     if (cached) {
       const parsed: UserProfile[] = JSON.parse(cached);
-      const combined = [...INITIAL_REGISTERED_PERSONNEL];
-      parsed.forEach((p) => {
-        if (!combined.some((c) => c.email.toLowerCase() === p.email.toLowerCase() || c.username.toLowerCase() === p.username.toLowerCase())) {
-          combined.push(p);
-        }
-      });
-      return combined;
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
     }
   } catch (e) {
     console.warn('Error reading registered personnel cache:', e);
   }
-  return INITIAL_REGISTERED_PERSONNEL;
+  return [];
 }
 
 // Check if a user is registered in Supabase or the MoES personnel registry
@@ -469,79 +668,86 @@ export async function checkUserRegistrationInSupabase(
     return { isRegistered: true, profile: localMatch };
   }
 
-  // 2. Query live Supabase database for trainees or trainers
+  // 2. Query live Supabase public.profiles table
   try {
-    // Check Supabase trainees table
-    const { data: traineeData } = await supabase
-      .from('trainees')
+    const { data: profileData, error: profileErr } = await supabase
+      .from('profiles')
       .select('*')
-      .ilike('name', `%${cleanId}%`)
+      .or(`email.ilike.%${cleanId}%,id.eq.${cleanId},full_name.ilike.%${cleanId}%`)
       .limit(1);
 
-    if (traineeData && traineeData.length > 0) {
-      const t = traineeData[0];
+    if (!profileErr && profileData && profileData.length > 0) {
+      const p = profileData[0];
+      const parsedVec = parsePostgresVector(p.face_descriptor);
       const profile: UserProfile = {
-        id: t.id,
-        username: t.name.toLowerCase().replace(/\s+/g, '_'),
-        fullName: t.name,
-        email: `${t.name.toLowerCase().replace(/\s+/g, '.')}@moes.gov.in`,
-        role: 'trainee',
-        institute: t.department || 'Ministry of Earth Sciences (MoES)',
-        designation: "Scientist 'B' Probationer",
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
-        phone: '+91 98765 00000',
-        bio: `Probationary Scientist at ${t.department}.`,
-        qualifications: 'M.Sc / M.Tech in Earth System Science',
-        workExperience: 'MoES Cadre Scientist',
-        igotKarmaPoints: 1200,
-        face_descriptor: DEFAULT_FACE_DESCRIPTOR,
-        interests: ['Meteorology', 'Oceanography'],
-        skills: [{ name: 'Earth Observation', level: t.baseline_skill || 85, category: 'Core' }],
-        certificates: []
-      };
-      return { isRegistered: true, profile };
-    }
-
-    // Check Supabase trainers table
-    const { data: trainerData } = await supabase
-      .from('trainers')
-      .select('*')
-      .ilike('name', `%${cleanId}%`)
-      .limit(1);
-
-    if (trainerData && trainerData.length > 0) {
-      const tr = trainerData[0];
-      const profile: UserProfile = {
-        id: tr.id,
-        username: tr.name.toLowerCase().replace(/\s+/g, '_'),
-        fullName: tr.name,
-        email: `${tr.name.toLowerCase().replace(/\s+/g, '.')}@moes.gov.in`,
-        role: 'trainer',
+        id: p.id,
+        username: p.email ? p.email.split('@')[0] : p.id,
+        fullName: p.full_name || 'Ministry Personnel',
+        email: p.email || `${cleanId}@moes.gov.in`,
+        role: (p.role as UserRole) || role || 'trainee',
         institute: 'Ministry of Earth Sciences (MoES)',
-        designation: "Scientist 'F' Faculty",
-        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=300',
-        phone: '+91 98111 00000',
-        bio: `Senior Instructor specializing in ${tr.specialization}.`,
-        qualifications: 'Ph.D. in Atmospheric / Ocean Sciences',
-        workExperience: 'Senior MoES Faculty',
-        specialization: tr.specialization,
-        yearsOfExperience: 15,
-        publishedMaterialsCount: 20,
-        face_descriptor: DEFAULT_FACE_DESCRIPTOR,
-        interests: ['Capacity Building', tr.specialization],
-        skills: [{ name: tr.specialization, level: Math.round(tr.competency_score || 90), category: 'Specialization' }],
+        designation: p.role === 'trainer' ? "Scientist 'G' / Faculty" : "Scientist 'B' Probationer",
+        avatar: p.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+        phone: '+91 98765 00000',
+        bio: 'Ministry of Earth Sciences verified personnel.',
+        qualifications: 'Earth System Sciences',
+        workExperience: 'MoES Official Cadre',
+        igotKarmaPoints: 1200,
+        face_descriptor: parsedVec.length >= 128 ? parsedVec : undefined,
+        interests: ['Meteorology', 'Oceanography'],
+        skills: [],
         certificates: []
       };
       return { isRegistered: true, profile };
     }
   } catch (err: any) {
-    console.warn('Supabase registration check error:', err);
+    console.warn('Supabase public.profiles lookup error:', err);
   }
 
-  // Not found in Supabase or local registry
+  // 3. Query server /api/profiles
+  try {
+    const res = await fetch('/api/profiles');
+    if (res.ok) {
+      const { profiles } = await res.json();
+      if (Array.isArray(profiles)) {
+        const found = profiles.find((p: any) =>
+          (p.email && p.email.toLowerCase() === cleanId) ||
+          (p.id && p.id.toLowerCase() === cleanId) ||
+          (p.full_name && p.full_name.toLowerCase() === cleanId)
+        );
+        if (found) {
+          const parsedVec = parsePostgresVector(found.face_descriptor);
+          const profile: UserProfile = {
+            id: found.id,
+            username: found.email ? found.email.split('@')[0] : found.id,
+            fullName: found.full_name,
+            email: found.email,
+            role: found.role || role || 'trainee',
+            institute: found.institute || 'Ministry of Earth Sciences',
+            designation: found.designation || "Scientist 'B' Probationer",
+            avatar: found.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+            phone: '+91 98765 00000',
+            bio: 'Registered MoES Personnel',
+            qualifications: 'Earth System Sciences',
+            workExperience: 'MoES Cadre',
+            igotKarmaPoints: 1200,
+            face_descriptor: parsedVec.length >= 128 ? parsedVec : undefined,
+            interests: [],
+            skills: [],
+            certificates: []
+          };
+          return { isRegistered: true, profile };
+        }
+      }
+    }
+  } catch (apiErr) {
+    // optional server check
+  }
+
+  // STRICT SECURITY: If not found in any real registered source, explicitly REJECT
   return { 
     isRegistered: false, 
-    error: `Access Denied: Unregistered Officer/Personnel. No institutional record found in MoES Central Registry (Supabase). Standard authentication is strictly blocked for unregistered users.` 
+    error: 'User Not Registered. No official record found in Supabase public.profiles.' 
   };
 }
 
@@ -553,7 +759,38 @@ export async function registerNewUserRecord(user: UserProfile): Promise<{ succes
     const updated = [...existing.filter(u => u.email.toLowerCase() !== user.email.toLowerCase()), user];
     localStorage.setItem('moes_registered_users_registry', JSON.stringify(updated));
 
-    // 2. Persist to Supabase Database (trainees or trainers table)
+    // 2. Post to server-side /api/profiles endpoint for persistent storage
+    try {
+      await fetch('/api/profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: user.id,
+          full_name: user.fullName,
+          role: user.role,
+          email: user.email,
+          institute: user.institute,
+          designation: user.designation,
+          face_descriptor: user.face_descriptor,
+          avatar_url: user.avatar
+        })
+      });
+    } catch (apiErr) {
+      console.warn('Sync to /api/profiles warning:', apiErr);
+    }
+
+    // 3. Persist to Supabase Database (trainees or trainers table and public.profiles)
+    if (user.face_descriptor && user.face_descriptor.length >= 128) {
+      upsertUserProfileWithFace({
+        id: user.id,
+        full_name: user.fullName,
+        role: user.role,
+        email: user.email,
+        face_descriptor: user.face_descriptor,
+        avatar_url: user.avatar
+      }).catch(err => console.warn('Sync to public.profiles:', err));
+    }
+
     if (user.role === 'trainee') {
       try {
         // Attempt full schema insert with face_descriptor JSONB and qualifications

@@ -34,11 +34,10 @@ import { sound } from '../../utils/soundEffects';
 import { 
   checkUserRegistrationInSupabase, 
   registerNewUserRecord, 
-  FAST_LOGIN_PROFILES, 
-  generateDeterministicFaceDescriptor,
-  EVALUATION_PASSCODE 
+  generateDeterministicFaceDescriptor
 } from '../../lib/supabase';
 import { requestWebcamStream, stopWebcamStream } from '../../lib/camera';
+import { PasswordlessFastLoginModal } from './PasswordlessFastLoginModal';
 
 interface LoginPageProps {
   onLoginSuccess: (user: UserProfile) => void;
@@ -86,11 +85,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   // Live Registration Verification State (Supabase check)
   const [isCheckingRegistration, setIsCheckingRegistration] = useState<boolean>(false);
 
-  // Fast Login / Demo Override State (TOP HEADER ONLY)
+  // Passwordless Fast Login Biometric Modal State
   const [isFastLoginOpen, setIsFastLoginOpen] = useState<boolean>(false);
-  const [fastLoginRole, setFastLoginRole] = useState<UserRole>('trainee');
-  const [fastLoginPasscode, setFastLoginPasscode] = useState<string>('');
-  const [fastLoginError, setFastLoginError] = useState<string>('');
 
   // ==========================================
   // OAUTH & ONBOARDING STATE
@@ -428,24 +424,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     onLoginSuccess(activeUser);
   };
 
-  // FAST LOGIN OVERRIDE (PIN: 12345)
-  const handleFastLoginSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    sound.playClick();
-    setFastLoginError('');
-
-    if (fastLoginPasscode.trim() === EVALUATION_PASSCODE) {
-      sound.playSuccess();
-      const demoProfile = FAST_LOGIN_PROFILES[fastLoginRole];
-      setIsFastLoginOpen(false);
-      setFastLoginPasscode('');
-      onLoginSuccess(demoProfile);
-    } else {
-      sound.playError();
-      setFastLoginError('Access Denied: Invalid evaluation passcode.');
-    }
-  };
-
   // ==========================================
   // REGISTRATION TAB (MANUAL WIZARD) LOGIC
   // ==========================================
@@ -645,11 +623,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             onClick={() => {
               sound.playClick();
               setIsFastLoginOpen(true);
-              setFastLoginPasscode('');
-              setFastLoginError('');
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-sm shadow-amber-500/20 transition-all cursor-pointer active:scale-95"
-            title="Fast Login / Demo Override (PIN: 12345)"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-rose-600 hover:from-amber-600 hover:to-rose-700 text-white font-extrabold text-xs shadow-sm shadow-rose-600/20 transition-all cursor-pointer active:scale-95"
+            title="Passwordless Fast Login via Live Face Recognition"
           >
             <Zap className="w-3.5 h-3.5 fill-white" />
             <span>Fast Login</span>
@@ -790,6 +766,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                     Admin
                   </button>
                 </div>
+              </div>
+
+              {/* PROMINENT PASSWORDLESS BIOMETRIC FAST LOGIN BUTTON */}
+              <div className="mb-4">
+                <button
+                  id="login-form-fast-biometric-btn"
+                  type="button"
+                  onClick={() => {
+                    sound.playClick();
+                    setIsFastLoginOpen(true);
+                  }}
+                  className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-500 via-rose-600 to-red-600 hover:from-amber-400 hover:to-rose-500 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-rose-600/25 flex items-center justify-center gap-2.5 transition-all cursor-pointer active:scale-[0.98]"
+                >
+                  <Zap className="w-4 h-4 fill-white animate-pulse" />
+                  <span>⚡ Fast Biometric Login (Passwordless Face Scan)</span>
+                </button>
               </div>
 
               {/* OAuth SSO Options */}
@@ -1773,146 +1765,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       )}
 
       {/* ========================================================= */}
-      {/* TOP-HEADER FAST LOGIN / DEMO OVERRIDE MODAL               */}
+      {/* PASSWORDLESS BIOMETRIC FAST LOGIN MODAL                   */}
       {/* ========================================================= */}
-      {isFastLoginOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-900 border-2 border-amber-400/80 dark:border-amber-500/60 rounded-3xl p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
-            
-            {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-rose-500 text-white flex items-center justify-center font-bold shadow-md shadow-amber-500/20">
-                  <Zap className="w-4 h-4 fill-white" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                    Fast Login Override
-                  </h3>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Evaluation bypass for portal reviewers
-                  </p>
-                </div>
-              </div>
-
-              <button
-                id="close-fast-login-modal-btn"
-                type="button"
-                onClick={() => {
-                  sound.playClick();
-                  setIsFastLoginOpen(false);
-                }}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Error Notification */}
-            {fastLoginError && (
-              <div className="mb-4 p-3 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs flex items-center gap-2 font-semibold">
-                <Info className="w-4 h-4 text-red-500 shrink-0" />
-                <span>{fastLoginError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleFastLoginSubmit} className="space-y-4">
-              {/* 1. Select Role */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                  1. Select Target Role
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    id="fast-login-role-trainee"
-                    type="button"
-                    onClick={() => {
-                      sound.playClick();
-                      setFastLoginRole('trainee');
-                    }}
-                    className={`py-2.5 px-2 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center border cursor-pointer ${
-                      fastLoginRole === 'trainee'
-                        ? 'bg-rose-600 text-white border-rose-500 shadow-md shadow-rose-900/20'
-                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    <span>Trainee Officer</span>
-                    <span className="text-[9px] font-normal opacity-80">IMD Pune</span>
-                  </button>
-
-                  <button
-                    id="fast-login-role-trainer"
-                    type="button"
-                    onClick={() => {
-                      sound.playClick();
-                      setFastLoginRole('trainer');
-                    }}
-                    className={`py-2.5 px-2 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center border cursor-pointer ${
-                      fastLoginRole === 'trainer'
-                        ? 'bg-amber-600 text-white border-amber-500 shadow-md shadow-amber-900/20'
-                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    <span>Trainer / Inst.</span>
-                    <span className="text-[9px] font-normal opacity-80">NCMRWF</span>
-                  </button>
-
-                  <button
-                    id="fast-login-role-admin"
-                    type="button"
-                    onClick={() => {
-                      sound.playClick();
-                      setFastLoginRole('admin');
-                    }}
-                    className={`py-2.5 px-2 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center border cursor-pointer ${
-                      fastLoginRole === 'admin'
-                        ? 'bg-rose-600 text-white border-rose-500 shadow-md shadow-rose-900/20'
-                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    <span>MoES Admin</span>
-                    <span className="text-[9px] font-normal opacity-80">HQ Director</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* 2. Passcode */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <label className="font-bold text-slate-700 dark:text-slate-300">
-                    2. Authorized Passcode
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setFastLoginPasscode('12345')}
-                    className="text-[11px] text-amber-600 dark:text-amber-400 hover:underline font-mono cursor-pointer"
-                  >
-                    Auto-fill PIN (12345)
-                  </button>
-                </div>
-                <input
-                  id="fast-login-passcode-input"
-                  type="password"
-                  value={fastLoginPasscode}
-                  onChange={(e) => setFastLoginPasscode(e.target.value)}
-                  placeholder="Enter Passcode (12345)"
-                  required
-                  className="w-full py-2.5 px-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-sm outline-none focus:border-amber-500 transition"
-                />
-              </div>
-
-              <button
-                id="fast-login-submit-btn"
-                type="submit"
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-600 hover:to-rose-600 text-white font-bold text-xs sm:text-sm shadow-md shadow-amber-500/20 transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
-              >
-                <Zap className="w-4 h-4 fill-white" />
-                <span>Authenticate & Access Dashboard</span>
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+      <PasswordlessFastLoginModal
+        isOpen={isFastLoginOpen}
+        onClose={() => setIsFastLoginOpen(false)}
+        onLoginSuccess={(user) => {
+          setIsFastLoginOpen(false);
+          onLoginSuccess(user);
+        }}
+        onSwitchToRegister={() => {
+          setIsFastLoginOpen(false);
+          setActiveTab('register');
+          setRegWizardStep(1);
+        }}
+      />
 
     </div>
   );

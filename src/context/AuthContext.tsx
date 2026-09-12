@@ -3,12 +3,10 @@ import { UserProfile, UserRole } from '../types';
 import { 
   supabase, 
   checkUserRegistrationInSupabase, 
-  FAST_LOGIN_PROFILES, 
-  EVALUATION_PASSCODE,
   getAllRegisteredFaceCandidates,
   matchFace1ToN,
   FaceMatchResult,
-  generateDeterministicFaceDescriptor
+  getRegisteredPersonnelRegistry
 } from '../lib/supabase';
 
 export interface AuthContextType {
@@ -18,6 +16,7 @@ export interface AuthContextType {
   setCurrentUser: (user: UserProfile | null) => void;
   setAuthError: (error: string | null) => void;
   verifyUserRegistration: (identifier: string, role?: UserRole) => Promise<{ isRegistered: boolean; profile?: UserProfile; error?: string }>;
+  fastLoginWithBiometrics: (liveVector: number[]) => Promise<{ success: boolean; user?: UserProfile; error?: string; matchResult?: FaceMatchResult }>;
   fastLoginWithPasscode: (role: UserRole, passcode: string) => { success: boolean; user?: UserProfile; error?: string };
   verifyFaceDescriptor1ToN: (liveVector: number[], targetProfile: UserProfile) => Promise<FaceMatchResult>;
   signOut: () => Promise<void>;
@@ -88,21 +87,67 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Fast Login / Evaluator Passcode Override ('12345')
+  // Passwordless Fast Login via Live Face Vector against Supabase public.profiles (d <= 0.450)
+  const fastLoginWithBiometrics = async (
+    liveVector: number[]
+  ): Promise<{ success: boolean; user?: UserProfile; error?: string; matchResult?: FaceMatchResult }> => {
+    setIsLoading(true);
+    setAuthError(null);
+    try {
+      const candidates = await getAllRegisteredFaceCandidates();
+      const result = matchFace1ToN(liveVector, candidates, 0.45);
+
+      if (result.matched && result.bestMatchUser && result.bestDistance <= 0.45) {
+        const localRegistry = getRegisteredPersonnelRegistry();
+        const found = localRegistry.find(
+          (u) => u.id === result.bestMatchUser!.id || u.email.toLowerCase() === (result.bestMatchUser!.email || '').toLowerCase()
+        );
+
+        const profile: UserProfile = found || {
+          id: result.bestMatchUser.id,
+          username: (result.bestMatchUser.email || result.bestMatchUser.name).toLowerCase().replace(/[@\s.]+/g, '_'),
+          fullName: result.bestMatchUser.name,
+          email: result.bestMatchUser.email || `${result.bestMatchUser.name.toLowerCase().replace(/\s+/g, '.')}@moes.gov.in`,
+          role: (result.bestMatchUser.role as any) || 'trainee',
+          institute: 'Ministry of Earth Sciences (MoES)',
+          designation: result.bestMatchUser.role === 'trainer' ? "Senior Faculty / Scientist 'G'" : "Probationer / Scientist 'B'",
+          avatar: result.bestMatchUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300',
+          phone: '+91 98765 00000',
+          bio: 'Verified Ministry Personnel authenticated via Supabase public.profiles.',
+          qualifications: 'Earth System Science',
+          workExperience: 'MoES Official Cadre',
+          igotKarmaPoints: 1200,
+          face_descriptor: result.bestMatchUser.face_descriptor,
+          interests: ['Meteorology', 'Oceanography'],
+          skills: [],
+          certificates: []
+        };
+
+        setCurrentUser(profile);
+        setAuthError(null);
+        return { success: true, user: profile, matchResult: result };
+      } else {
+        const err = 'User Not Registered: Scanned face does not match any profile in Supabase public.profiles (d > 0.450).';
+        setAuthError(err);
+        return { success: false, error: err, matchResult: result };
+      }
+    } catch (err: any) {
+      const msg = err?.message || 'Biometric authentication failed.';
+      setAuthError(msg);
+      return { success: false, error: msg };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fast Login / Passcode compatibility stub
   const fastLoginWithPasscode = (
     role: UserRole, 
     passcode: string
   ): { success: boolean; user?: UserProfile; error?: string } => {
-    if (passcode.trim() === EVALUATION_PASSCODE) {
-      const demoProfile = FAST_LOGIN_PROFILES[role];
-      setCurrentUser(demoProfile);
-      setAuthError(null);
-      return { success: true, user: demoProfile };
-    } else {
-      const err = 'Access Denied: Invalid Passcode. Access denied.';
-      setAuthError(err);
-      return { success: false, error: err };
-    }
+    const err = 'Passcode bypass is deprecated. Please use passwordless Face Biometric Verification.';
+    setAuthError(err);
+    return { success: false, error: err };
   };
 
   // High-Speed 1-to-N Face Vector Verification with Strict Euclidean Threshold (< 0.45)
@@ -111,17 +156,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     targetProfile: UserProfile
   ): Promise<FaceMatchResult> => {
     const candidates = await getAllRegisteredFaceCandidates();
-    // Ensure target profile is in candidates list
-    if (!candidates.some(c => c.name.toLowerCase() === targetProfile.fullName.toLowerCase())) {
-      candidates.push({
-        id: targetProfile.id,
-        name: targetProfile.fullName,
-        role: targetProfile.role,
-        face_descriptor: targetProfile.face_descriptor || generateDeterministicFaceDescriptor(targetProfile.fullName),
-        avatar: targetProfile.avatar
-      });
-    }
-
     return matchFace1ToN(liveVector, candidates, 0.45);
   };
 
@@ -144,6 +178,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setCurrentUser,
         setAuthError,
         verifyUserRegistration,
+        fastLoginWithBiometrics,
         fastLoginWithPasscode,
         verifyFaceDescriptor1ToN,
         signOut
