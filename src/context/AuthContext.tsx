@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { UserProfile, UserRole } from '../types';
 import { supabase, checkUserRegistrationInSupabase, getAllRegisteredFaceCandidates, matchFace1ToN, FaceMatchResult, getRegisteredPersonnelRegistry } from '../lib/supabase';
 
@@ -25,35 +25,42 @@ function normalizeRole(value: unknown): UserRole {
 }
 
 async function loadProfile(userId: string): Promise<UserProfile | null> {
-  const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-  if (error) throw error;
-  if (!data) return null;
-  return {
-    id: data.id,
-    username: data.username || data.email?.split('@')[0] || data.id,
-    fullName: data.full_name || data.email || 'MoES Personnel',
-    email: data.email || '',
-    role: normalizeRole(data.role),
-    institute: data.institute || 'Ministry of Earth Sciences (MoES)',
-    designation: data.designation || '',
-    avatar: data.avatar_url || defaultAvatar,
-    phone: data.phone || '',
-    bio: data.bio || '',
-    qualifications: data.qualifications || '',
-    workExperience: data.work_experience || '',
-    interests: Array.isArray(data.interests) ? data.interests : [],
-    skills: Array.isArray(data.skills) ? data.skills : [],
-    certificates: Array.isArray(data.certificates) ? data.certificates : [],
-    igotKarmaPoints: data.igot_karma_points,
-    ncfId: data.ncf_id,
-    face_descriptor: Array.isArray(data.face_descriptor) ? data.face_descriptor : undefined,
-    specialization: data.specialization,
-    yearsOfExperience: data.years_of_experience,
-    publishedMaterialsCount: data.published_materials_count,
-    clearanceLevel: data.clearance_level,
-    govSecurityId: data.gov_security_id,
-    accountStatus: data.account_status
-  } as UserProfile;
+  let lastError: any = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+    if (!error && data) {
+      return {
+        id: data.id,
+        username: data.username || data.email?.split('@')[0] || data.id,
+        fullName: data.full_name || data.email || 'MoES Personnel',
+        email: data.email || '',
+        role: normalizeRole(data.role),
+        institute: data.institute || 'Ministry of Earth Sciences (MoES)',
+        designation: data.designation || '',
+        avatar: data.avatar_url || defaultAvatar,
+        phone: data.phone || '',
+        bio: data.bio || '',
+        qualifications: data.qualifications || '',
+        workExperience: data.work_experience || '',
+        interests: Array.isArray(data.interests) ? data.interests : [],
+        skills: Array.isArray(data.skills) ? data.skills : [],
+        certificates: Array.isArray(data.certificates) ? data.certificates : [],
+        igotKarmaPoints: data.igot_karma_points,
+        ncfId: data.ncf_id,
+        face_descriptor: Array.isArray(data.face_descriptor) ? data.face_descriptor : undefined,
+        specialization: data.specialization,
+        yearsOfExperience: data.years_of_experience,
+        publishedMaterialsCount: data.published_materials_count,
+        clearanceLevel: data.clearance_level,
+        govSecurityId: data.gov_security_id,
+        accountStatus: data.account_status
+      } as UserProfile;
+    }
+    lastError = error;
+    if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+  }
+  if (lastError) throw lastError;
+  return null;
 }
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -64,21 +71,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const activateAuthenticatedProfile = async (userId: string): Promise<UserProfile | null> => {
     const profile = await loadProfile(userId);
     if (!profile) throw new Error('Your account is authenticated, but no Capacity Connect profile exists.');
-    if (profile.accountStatus === 'pending') {
-      await supabase.auth.signOut();
-      throw new Error('Your administrator account is pending approval. An existing Capacity Connect administrator must approve it before you can sign in.');
-    }
-    if (profile.accountStatus === 'rejected') {
-      await supabase.auth.signOut();
-      throw new Error('Your account registration was not approved. Please contact Capacity Connect administration.');
-    }
+    if (profile.accountStatus === 'pending') throw new Error('Your administrator account is pending approval. An existing Capacity Connect administrator must approve it before you can sign in.');
+    if (profile.accountStatus === 'rejected') throw new Error('Your account registration was not approved. Please contact Capacity Connect administration.');
     setCurrentUser(profile);
     return profile;
   };
 
   useEffect(() => {
     let mounted = true;
-
     const restoreSession = async () => {
       setIsLoading(true);
       try {
@@ -90,8 +90,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           } catch (err: any) {
             if (mounted) setAuthError(err?.message || 'Unable to restore authentication session.');
           }
-        } else if (mounted) {
-          setCurrentUser(null);
         }
       } catch (error: any) {
         if (mounted) setAuthError(error?.message || 'Unable to restore authentication session.');
@@ -99,30 +97,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (mounted) setIsLoading(false);
       }
     };
-
     void restoreSession();
 
-    // Supabase warns against awaiting Supabase calls directly inside this callback because
-    // auth state changes are emitted while the client lock is held. Queue profile loading
-    // after the callback returns to prevent the sign-in/session restore race that can send
-    // a successfully authenticated user back to the login screen.
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+    // Do not perform database work inside Supabase's auth callback. SIGNED_IN can fire
+    // while the client's internal auth lock is held; doing a profile query here can race
+    // the session write and repeatedly return the UI to the login screen.
+    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
       if (!mounted) return;
-      if (event === 'SIGNED_OUT' || !session?.user) {
+      if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
         setAuthError(null);
-        return;
       }
-
-      const userId = session.user.id;
-      setTimeout(() => {
-        if (!mounted) return;
-        void activateAuthenticatedProfile(userId).catch((error: any) => {
-          if (mounted) setAuthError(error?.message || 'Authenticated, but profile could not be loaded.');
-        });
-      }, 0);
     });
-
     return () => {
       mounted = false;
       listener.subscription.unsubscribe();
@@ -136,6 +122,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
       if (error) throw error;
       if (!data.user) throw new Error('Authentication succeeded but no user was returned.');
+      // Force a session read before the protected profile query so RLS sees the new JWT.
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session?.user) throw new Error('Login succeeded, but the secure session was not established. Please try again.');
       const profile = await activateAuthenticatedProfile(data.user.id);
       return { success: true, user: profile || undefined };
     } catch (error: any) {
@@ -154,11 +143,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const role = profileData.role === 'trainer' || profileData.role === 'admin' ? profileData.role : 'trainee';
       const metadata = {
         full_name: profileData.fullName || '', phone: profileData.phone || '', role,
-        institute: profileData.institute || '', designation: profileData.designation || '',
-        qualifications: profileData.qualifications || '', work_experience: profileData.workExperience || '',
-        bio: profileData.bio || '', specialization: profileData.specialization || '',
-        years_of_experience: profileData.yearsOfExperience?.toString() || '',
-        interests: profileData.interests || [], skills: profileData.skills || []
+        institute: profileData.institute || '', designation: profileData.designation || '', qualifications: profileData.qualifications || '',
+        work_experience: profileData.workExperience || '', bio: profileData.bio || '', specialization: profileData.specialization || '',
+        years_of_experience: profileData.yearsOfExperience?.toString() || '', interests: profileData.interests || [], skills: profileData.skills || []
       };
       const { data, error } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password, options: { data: metadata } });
       if (error) throw error;
@@ -180,52 +167,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const verifyUserRegistration = async (identifier: string, role?: UserRole) => {
-    setIsLoading(true);
-    setAuthError(null);
+    setIsLoading(true); setAuthError(null);
     try {
       const res = await checkUserRegistrationInSupabase(identifier, role);
       if (!res.isRegistered) setAuthError(res.error || 'Access Denied: Unregistered Officer/Personnel.');
       return res;
     } catch (err: any) {
       const errorMsg = err.message || 'Supabase central registry connection error.';
-      setAuthError(errorMsg);
-      return { isRegistered: false, error: errorMsg };
-    } finally {
-      setIsLoading(false);
-    }
+      setAuthError(errorMsg); return { isRegistered: false, error: errorMsg };
+    } finally { setIsLoading(false); }
   };
 
   const fastLoginWithBiometrics = async (liveVector: number[]) => {
-    setIsLoading(true);
-    setAuthError(null);
+    setIsLoading(true); setAuthError(null);
     try {
       const candidates = await getAllRegisteredFaceCandidates();
       const result = matchFace1ToN(liveVector, candidates, 0.45);
       if (!result.matched || !result.bestMatchUser || result.bestDistance > 0.45) {
         const error = 'Biometric verification failed: no matching registered profile was found.';
-        setAuthError(error);
-        return { success: false, error, matchResult: result };
+        setAuthError(error); return { success: false, error, matchResult: result };
       }
       const found = getRegisteredPersonnelRegistry().find(u => u.id === result.bestMatchUser!.id || u.email.toLowerCase() === (result.bestMatchUser!.email || '').toLowerCase());
       if (!found) {
         const error = 'Biometric match found, but a local profile record is unavailable. Use normal authenticated login.';
-        setAuthError(error);
-        return { success: false, error, matchResult: result };
+        setAuthError(error); return { success: false, error, matchResult: result };
       }
       return { success: true, user: found, matchResult: result };
     } catch (err: any) {
       const msg = err?.message || 'Biometric verification failed.';
-      setAuthError(msg);
-      return { success: false, error: msg };
-    } finally {
-      setIsLoading(false);
-    }
+      setAuthError(msg); return { success: false, error: msg };
+    } finally { setIsLoading(false); }
   };
 
   const fastLoginWithPasscode = (_role: UserRole, _passcode: string) => {
     const error = 'Passcode bypass is disabled. Use authenticated email/password login or the labelled SIH evaluation flow.';
-    setAuthError(error);
-    return { success: false, error };
+    setAuthError(error); return { success: false, error };
   };
 
   const verifyFaceDescriptor1ToN = async (liveVector: number[], _targetProfile: UserProfile) => {
@@ -241,8 +217,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (error: any) {
       setAuthError(error?.message || 'Logout failed.');
     } finally {
-      setCurrentUser(null);
-      setIsLoading(false);
+      setCurrentUser(null); setIsLoading(false);
     }
   };
 
