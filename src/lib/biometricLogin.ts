@@ -1,4 +1,4 @@
-import { SUPABASE_URL, supabase } from './supabase';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase';
 
 export interface BiometricLoginResult {
   matched: boolean;
@@ -13,20 +13,15 @@ export interface BiometricLoginResult {
   action_link?: string | null;
 }
 
-/**
- * Sends face embeddings to the protected Edge Function.
- * The browser never receives the biometric database.
- */
-export async function verifyBiometricLogin(vectors: number[]): Promise<BiometricLoginResult> {
+async function callBiometricFunction(payload: unknown): Promise<BiometricLoginResult> {
   const response = await fetch(`${SUPABASE_URL}/functions/v1/biometric-login`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      apikey: (supabase as any).supabaseKey,
+      apikey: SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify({ vector: vectors }),
+    body: JSON.stringify(payload),
   });
-
   const data = await response.json().catch(() => ({}));
   if (!response.ok && response.status !== 401) {
     throw new Error(data?.error || 'Biometric verification failed');
@@ -34,20 +29,13 @@ export async function verifyBiometricLogin(vectors: number[]): Promise<Biometric
   return data as BiometricLoginResult;
 }
 
-/**
- * Performs temporal consistency verification using 3+ captured frames.
- */
-export async function verifyBiometricFrames(vectors: number[][]): Promise<BiometricLoginResult> {
+/** Sends one real face embedding; the browser never receives the biometric database. */
+export function verifyBiometricLogin(vector: number[]): Promise<BiometricLoginResult> {
+  return callBiometricFunction({ vector });
+}
+
+/** Sends 3-5 temporal face embeddings for consistency checking and server-side matching. */
+export function verifyBiometricFrames(vectors: number[][]): Promise<BiometricLoginResult> {
   if (vectors.length < 3) throw new Error('At least three face frames are required');
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/biometric-login`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: (supabase as any).supabaseKey,
-    },
-    body: JSON.stringify({ vectors: vectors.slice(0, 5) }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok && response.status !== 401) throw new Error(data?.error || 'Biometric verification failed');
-  return data as BiometricLoginResult;
+  return callBiometricFunction({ vectors: vectors.slice(0, 5) });
 }
