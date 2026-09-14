@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Lock, Mail, ArrowRight, UserPlus, Eye, EyeOff, Sun, Moon, AlertCircle, CheckCircle2, Zap, User, Building2, GraduationCap, Briefcase } from 'lucide-react';
+import { ShieldCheck, Lock, Mail, ArrowRight, UserPlus, Eye, EyeOff, Sun, Moon, AlertCircle, CheckCircle2, Zap, User, Building2, GraduationCap, Briefcase, Fingerprint } from 'lucide-react';
 import { UserRole } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
+import { supabase, UserProfile } from '../../lib/supabase';
+import { PasswordlessFastLoginModal } from './PasswordlessFastLoginModal';
 
 interface LoginPageProps { theme?: 'light' | 'dark'; onToggleTheme?: () => void; }
 const roles: { value: UserRole; label: string }[] = [
@@ -18,7 +19,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ theme = 'light', onToggleT
   const [designation, setDesignation] = useState(''); const [qualifications, setQualifications] = useState(''); const [workExperience, setWorkExperience] = useState('');
   const [specialization, setSpecialization] = useState(''); const [yearsOfExperience, setYearsOfExperience] = useState(''); const [interests, setInterests] = useState('');
   const [skills, setSkills] = useState(''); const [bio, setBio] = useState('');
-  const [showPassword, setShowPassword] = useState(false); const [message, setMessage] = useState(''); const [demoLoading, setDemoLoading] = useState<UserRole | null>(null);
+  const [showPassword, setShowPassword] = useState(false); const [message, setMessage] = useState(''); const [demoLoading, setDemoLoading] = useState<UserRole | null>(null); const [showBiometric, setShowBiometric] = useState(false);
 
   const input = 'mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2.5 outline-none focus:ring-2 focus:ring-rose-500';
   const label = 'text-xs font-semibold text-slate-600 dark:text-slate-300';
@@ -59,6 +60,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ theme = 'light', onToggleT
   const selectMode = (next: 'login' | 'register') => { setMode(next); setMessage(''); setAuthError(null); };
   const resetRoleFields = (next: UserRole) => { setRole(next); setMessage(''); };
 
+  const biometricSuccess = (_user: UserProfile) => {
+    // Secure biometric flow normally redirects through a one-time Supabase Auth magic link.
+    setShowBiometric(false);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#090e17] flex items-center justify-center px-4 py-8 text-slate-900 dark:text-white">
       <div className="w-full max-w-2xl">
@@ -93,6 +99,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ theme = 'light', onToggleT
             </div>
             {(message || authError) && <div className={`rounded-lg p-3 text-sm flex gap-2 ${message && !authError ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300'}`}>{message && !authError ? <CheckCircle2 size={18}/> : <AlertCircle size={18}/>}<span>{message || authError}</span></div>}
             <button disabled={isLoading} className="w-full rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-60 text-white py-3 font-semibold flex items-center justify-center gap-2 transition">{mode === 'login' ? <><ArrowRight size={18}/> Sign in securely</> : <><UserPlus size={18}/> Create {role} account</>}</button>
+            {mode === 'login' && <button type="button" onClick={() => setShowBiometric(true)} className="w-full rounded-lg border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/20 text-cyan-800 dark:text-cyan-200 py-3 font-semibold flex items-center justify-center gap-2 hover:bg-cyan-100 dark:hover:bg-cyan-950/40 transition"><Fingerprint size={18}/> Fast Login with Face Recognition</button>}
           </form>
 
           <div className="mx-6 mb-6 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/20 p-4">
@@ -104,6 +111,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ theme = 'light', onToggleT
           </div>
         </div>
       </div>
+      <PasswordlessFastLoginModal isOpen={showBiometric} onClose={() => setShowBiometric(false)} onLoginSuccess={biometricSuccess} onSwitchToRegister={() => { setShowBiometric(false); setMode('register'); }} />
     </div>
   );
 };
