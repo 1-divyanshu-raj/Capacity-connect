@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   UserProfile, Course, Assessment, LibraryResource, PendingApproval, Announcement,
   CompetencyMatch, TraineeProgress, ScientificAssignmentSubmission, PresentationSubmission
@@ -15,6 +15,24 @@ import { TrainerDashboard } from './components/trainer/TrainerDashboard';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { useTheme } from './hooks';
 import { useAuth } from './context/AuthContext';
+import { supabase } from './lib/supabase';
+
+function mapPendingProfile(profile: any): PendingApproval {
+  return {
+    id: profile.id,
+    fullName: profile.full_name || profile.email || 'Pending applicant',
+    email: profile.email || '',
+    role: profile.role === 'admin' || profile.role === 'trainer' ? profile.role : 'trainee',
+    institute: profile.institute || '',
+    designation: profile.designation || '',
+    submittedDocs: profile.qualifications || 'Profile registration submitted',
+    requestedDate: profile.created_at ? new Date(profile.created_at).toLocaleDateString() : 'Pending',
+    status: profile.account_status === 'rejected' ? 'Rejected' : profile.account_status === 'active' ? 'Approved' : 'Pending',
+    ncfId: profile.ncf_id,
+    igotKarmaPoints: profile.igot_karma_points,
+    igotSyncStatus: 'Pending'
+  };
+}
 
 export default function App() {
   const { currentUser, isLoading: authLoading, signOut, setCurrentUser } = useAuth();
@@ -30,6 +48,22 @@ export default function App() {
   const [assignmentSubmissions, setAssignmentSubmissions] = useState<ScientificAssignmentSubmission[]>(INITIAL_ASSIGNMENT_SUBMISSIONS);
   const [presentationSubmissions, setPresentationSubmissions] = useState<PresentationSubmission[]>(INITIAL_PRESENTATION_SUBMISSIONS);
 
+  useEffect(() => {
+    if (currentUser?.role !== 'admin') return;
+    let cancelled = false;
+    const loadPendingApprovals = async () => {
+      const { data, error } = await supabase.rpc('list_pending_profiles');
+      if (cancelled || error || !Array.isArray(data)) return;
+      const live = data.map(mapPendingProfile);
+      setApprovals(prev => {
+        const mock = prev.filter(item => !String(item.id).startsWith('profile:'));
+        return [...live.map(item => ({ ...item, id: `profile:${item.id}` })), ...mock];
+      });
+    };
+    void loadPendingApprovals();
+    return () => { cancelled = true; };
+  }, [currentUser?.role]);
+
   const handleUpdateUser = (updated: UserProfile) => setCurrentUser(updated);
   const handleSignOut = () => { void signOut(); };
 
@@ -40,8 +74,30 @@ export default function App() {
   const handleAddResource = (res: LibraryResource) => setLibraryResources(prev => [res, ...prev]);
   const handleDeleteResource = (id: string) => setLibraryResources(prev => prev.filter(r => r.id !== id));
   const handlePublishAssessment = (newAsm: Assessment) => setAssessments(prev => ({ ...prev, [newAsm.id]: newAsm }));
-  const handleApproveUser = (id: string) => setApprovals(prev => prev.map(item => item.id === id ? { ...item, status: 'Approved' } : item));
-  const handleRejectUser = (id: string) => setApprovals(prev => prev.map(item => item.id === id ? { ...item, status: 'Rejected' } : item));
+
+  const reviewLiveProfile = async (id: string, decision: 'approve' | 'reject') => {
+    const profileId = id.startsWith('profile:') ? id.slice('profile:'.length) : null;
+    if (!profileId) return false;
+    const { data, error } = await supabase.rpc('review_profile', { target_profile_id: profileId, decision });
+    if (error || data !== true) return false;
+    setApprovals(prev => prev.map(item => item.id === id ? { ...item, status: decision === 'approve' ? 'Approved' : 'Rejected' } : item));
+    return true;
+  };
+
+  const handleApproveUser = (id: string) => {
+    void (async () => {
+      const reviewed = await reviewLiveProfile(id, 'approve');
+      if (!reviewed) setApprovals(prev => prev.map(item => item.id === id ? { ...item, status: 'Approved' } : item));
+    })();
+  };
+
+  const handleRejectUser = (id: string) => {
+    void (async () => {
+      const reviewed = await reviewLiveProfile(id, 'reject');
+      if (!reviewed) setApprovals(prev => prev.map(item => item.id === id ? { ...item, status: 'Rejected' } : item));
+    })();
+  };
+
   const handleAddAnnouncement = (ann: Announcement) => setAnnouncements(prev => [ann, ...prev]);
   const handleTogglePinAnnouncement = (id: string) => setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, isPinned: !a.isPinned } : a));
   const handleDeleteAnnouncement = (id: string) => setAnnouncements(prev => prev.filter(a => a.id !== id));
