@@ -105,36 +105,38 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
       if (cancelled) return;
+
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        // The initial restore/sign-in path owns profile loading. Do not query Supabase
-        // from inside this callback because Supabase may still hold its auth lock.
+        // Profile restoration is deliberately kept outside this callback because
+        // Supabase may still hold its auth lock while dispatching the event.
         return;
       }
+
       if (event === 'SIGNED_OUT') {
-        // A transient SIGNED_OUT event can occur while Supabase rotates/restores its
-        // session. Only clear the UI immediately for an explicit user logout. Otherwise
-        // verify the session first so the app cannot bounce back to LoginPage endlessly.
         if (explicitSignOutRef.current) {
           setCurrentUser(null);
           setAuthError(null);
           explicitSignOutRef.current = false;
           return;
         }
+
+        // Do NOT clear an already authenticated UI session because of a transient
+        // SIGNED_OUT notification. Supabase can emit this while restoring/rotating
+        // storage. A missing session will be handled by the next full restoration;
+        // clearing here is what caused the LoginPage bounce/loop.
+        if (currentUser) return;
+
         window.setTimeout(() => {
           void (async () => {
             try {
               const { data } = await supabase.auth.getSession();
               if (!mountedRef.current || cancelled) return;
-              if (data.session?.user) {
-                await activateAuthenticatedProfile(data.session.user.id);
-              } else {
-                setCurrentUser(null);
-              }
-            } catch (error: any) {
-              if (mountedRef.current && !cancelled) setAuthError(error?.message || 'Unable to restore authentication session.');
+              if (data.session?.user) await activateAuthenticatedProfile(data.session.user.id);
+            } catch {
+              // Leave the existing login UI alone; sign-in failures are surfaced by signIn().
             }
           })();
-        }, 50);
+        }, 100);
       }
     });
 
@@ -143,7 +145,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       mountedRef.current = false;
       listener.subscription.unsubscribe();
     };
-  }, []);
+  }, [currentUser]);
 
   const signIn = async (email: string, password: string) => {
     setIsLoading(true);
@@ -154,7 +156,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (error) throw error;
       if (!data.user) throw new Error('Authentication succeeded but no user was returned.');
 
-      // Force a session read before the protected profile query so RLS sees the new JWT.
       const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) throw sessionError;
       if (!sessionData.session?.user) throw new Error('Login succeeded, but the secure session was not established. Please try again.');
