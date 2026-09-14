@@ -1,13 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { UserProfile, UserRole } from '../types';
-import {
-  supabase,
-  checkUserRegistrationInSupabase,
-  getAllRegisteredFaceCandidates,
-  matchFace1ToN,
-  FaceMatchResult,
-  getRegisteredPersonnelRegistry
-} from '../lib/supabase';
+import { supabase, checkUserRegistrationInSupabase, getAllRegisteredFaceCandidates, matchFace1ToN, FaceMatchResult, getRegisteredPersonnelRegistry } from '../lib/supabase';
 
 export interface AuthContextType {
   currentUser: UserProfile | null;
@@ -25,7 +18,6 @@ export interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
 const defaultAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300';
 
 function normalizeRole(value: unknown): UserRole {
@@ -33,15 +25,9 @@ function normalizeRole(value: unknown): UserRole {
 }
 
 async function loadProfile(userId: string): Promise<UserProfile | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
-
+  const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
   if (error) throw error;
   if (!data) return null;
-
   return {
     id: data.id,
     username: data.username || data.email?.split('@')[0] || data.id,
@@ -65,246 +51,142 @@ async function loadProfile(userId: string): Promise<UserProfile | null> {
     yearsOfExperience: data.years_of_experience,
     publishedMaterialsCount: data.published_materials_count,
     clearanceLevel: data.clearance_level,
-    govSecurityId: data.gov_security_id
+    govSecurityId: data.gov_security_id,
+    accountStatus: data.account_status
   } as UserProfile;
 }
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+
+  const activateAuthenticatedProfile = async (userId: string): Promise<UserProfile | null> => {
+    const profile = await loadProfile(userId);
+    if (!profile) throw new Error('Your account is authenticated, but no Capacity Connect profile exists.');
+    if ((profile as any).accountStatus === 'pending') {
+      await supabase.auth.signOut();
+      throw new Error('Your administrator account is pending approval. An existing Capacity Connect administrator must approve it before you can sign in.');
+    }
+    if ((profile as any).accountStatus === 'rejected') {
+      await supabase.auth.signOut();
+      throw new Error('Your account registration was not approved. Please contact Capacity Connect administration.');
+    }
+    setCurrentUser(profile);
+    return profile;
+  };
 
   useEffect(() => {
     let mounted = true;
-
     const restoreSession = async () => {
       setIsLoading(true);
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw error;
-
         if (session?.user && mounted) {
-          const profile = await loadProfile(session.user.id);
-          if (mounted) setCurrentUser(profile);
-        } else if (mounted) {
-          setCurrentUser(null);
-        }
+          try { await activateAuthenticatedProfile(session.user.id); }
+          catch (err: any) { if (mounted) setAuthError(err?.message || 'Unable to restore authentication session.'); }
+        } else if (mounted) setCurrentUser(null);
       } catch (error: any) {
-        console.error('Supabase session restore failed:', error);
         if (mounted) setAuthError(error?.message || 'Unable to restore authentication session.');
-      } finally {
-        if (mounted) setIsLoading(false);
-      }
+      } finally { if (mounted) setIsLoading(false); }
     };
-
     restoreSession();
-
     const { data: listener } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
-
-      if (event === 'SIGNED_OUT' || !session?.user) {
-        setCurrentUser(null);
-        setAuthError(null);
-        return;
-      }
-
-      try {
-        const profile = await loadProfile(session.user.id);
-        if (mounted) setCurrentUser(profile);
-      } catch (error: any) {
-        console.error('Unable to load authenticated profile:', error);
-        if (mounted) setAuthError(error?.message || 'Authenticated, but profile could not be loaded.');
-      }
+      if (event === 'SIGNED_OUT' || !session?.user) { setCurrentUser(null); setAuthError(null); return; }
+      try { await activateAuthenticatedProfile(session.user.id); }
+      catch (error: any) { if (mounted) setAuthError(error?.message || 'Authenticated, but profile could not be loaded.'); }
     });
-
-    return () => {
-      mounted = false;
-      listener.subscription.unsubscribe();
-    };
+    return () => { mounted = false; listener.subscription.unsubscribe(); };
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    setIsLoading(true);
-    setAuthError(null);
+    setIsLoading(true); setAuthError(null);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
-        password
-      });
-
+      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
       if (error) throw error;
       if (!data.user) throw new Error('Authentication succeeded but no user was returned.');
-
-      const profile = await loadProfile(data.user.id);
-      if (!profile) {
-        await supabase.auth.signOut();
-        throw new Error('Your account is authenticated, but no Capacity Connect profile exists.');
-      }
-
-      setCurrentUser(profile);
-      return { success: true, user: profile };
+      const profile = await activateAuthenticatedProfile(data.user.id);
+      return { success: true, user: profile || undefined };
     } catch (error: any) {
-      const message = error?.message || 'Login failed.';
-      setAuthError(message);
-      return { success: false, error: message };
-    } finally {
-      setIsLoading(false);
-    }
+      const message = error?.message || 'Login failed.'; setAuthError(message); return { success: false, error: message };
+    } finally { setIsLoading(false); }
   };
 
   const signUp = async (email: string, password: string, profileData: Partial<UserProfile>) => {
-    setIsLoading(true);
-    setAuthError(null);
+    setIsLoading(true); setAuthError(null);
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim().toLowerCase(),
-        password,
-        options: {
-          data: {
-            full_name: profileData.fullName || '',
-            role: profileData.role || 'trainee'
-          }
-        }
-      });
-
+      const role = profileData.role === 'trainer' || profileData.role === 'admin' ? profileData.role : 'trainee';
+      const metadata = {
+        full_name: profileData.fullName || '', role,
+        institute: profileData.institute || '', designation: profileData.designation || '',
+        qualifications: profileData.qualifications || '', work_experience: profileData.workExperience || '',
+        bio: profileData.bio || '', specialization: profileData.specialization || '',
+        years_of_experience: profileData.yearsOfExperience?.toString() || '',
+        interests: profileData.interests || [], skills: profileData.skills || []
+      };
+      const { data, error } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password, options: { data: metadata } });
       if (error) throw error;
       if (!data.user) throw new Error('Registration did not return a user.');
-
-      // Profile creation should be handled by the database trigger/policy. If the
-      // project requires email confirmation, the user remains unauthenticated until
-      // Supabase confirms the address.
+      if (role === 'admin') return { success: true, error: 'Admin registration submitted. Your account will be available after approval by an existing administrator.' };
       if (data.session) {
         const createdProfile = await loadProfile(data.user.id);
         if (createdProfile) setCurrentUser(createdProfile);
         return { success: true, user: createdProfile || undefined };
       }
-
       return { success: true, error: 'Registration successful. Check your email to confirm your account.' };
     } catch (error: any) {
-      const message = error?.message || 'Registration failed.';
-      setAuthError(message);
-      return { success: false, error: message };
-    } finally {
-      setIsLoading(false);
-    }
+      const message = error?.message || 'Registration failed.'; setAuthError(message); return { success: false, error: message };
+    } finally { setIsLoading(false); }
   };
 
-  const verifyUserRegistration = async (
-    identifier: string,
-    role?: UserRole
-  ): Promise<{ isRegistered: boolean; profile?: UserProfile; error?: string }> => {
-    setIsLoading(true);
-    setAuthError(null);
+  const verifyUserRegistration = async (identifier: string, role?: UserRole) => {
+    setIsLoading(true); setAuthError(null);
     try {
       const res = await checkUserRegistrationInSupabase(identifier, role);
-      if (!res.isRegistered) {
-        setAuthError(res.error || 'Access Denied: Unregistered Officer/Personnel.');
-      }
+      if (!res.isRegistered) setAuthError(res.error || 'Access Denied: Unregistered Officer/Personnel.');
       return res;
     } catch (err: any) {
-      const errorMsg = err.message || 'Supabase central registry connection error.';
-      setAuthError(errorMsg);
-      return { isRegistered: false, error: errorMsg };
-    } finally {
-      setIsLoading(false);
-    }
+      const errorMsg = err.message || 'Supabase central registry connection error.'; setAuthError(errorMsg); return { isRegistered: false, error: errorMsg };
+    } finally { setIsLoading(false); }
   };
 
-  // Legacy biometric verification remains available for the onboarding/biometric
-  // feature, but it is deliberately NOT treated as a Supabase Auth session.
-  const fastLoginWithBiometrics = async (
-    liveVector: number[]
-  ): Promise<{ success: boolean; user?: UserProfile; error?: string; matchResult?: FaceMatchResult }> => {
-    setIsLoading(true);
-    setAuthError(null);
+  const fastLoginWithBiometrics = async (liveVector: number[]) => {
+    setIsLoading(true); setAuthError(null);
     try {
       const candidates = await getAllRegisteredFaceCandidates();
       const result = matchFace1ToN(liveVector, candidates, 0.45);
-
       if (!result.matched || !result.bestMatchUser || result.bestDistance > 0.45) {
-        const error = 'Biometric verification failed: no matching registered profile was found.';
-        setAuthError(error);
-        return { success: false, error, matchResult: result };
+        const error = 'Biometric verification failed: no matching registered profile was found.'; setAuthError(error); return { success: false, error, matchResult: result };
       }
-
-      const localRegistry = getRegisteredPersonnelRegistry();
-      const found = localRegistry.find(
-        (u) => u.id === result.bestMatchUser!.id || u.email.toLowerCase() === (result.bestMatchUser!.email || '').toLowerCase()
-      );
-
-      if (!found) {
-        const error = 'Biometric match found, but a local profile record is unavailable. Use normal authenticated login.';
-        setAuthError(error);
-        return { success: false, error, matchResult: result };
-      }
-
-      // Do not call setCurrentUser here: a face match alone is not a Supabase Auth session.
+      const found = getRegisteredPersonnelRegistry().find(u => u.id === result.bestMatchUser!.id || u.email.toLowerCase() === (result.bestMatchUser!.email || '').toLowerCase());
+      if (!found) { const error = 'Biometric match found, but a local profile record is unavailable. Use normal authenticated login.'; setAuthError(error); return { success: false, error, matchResult: result }; }
       return { success: true, user: found, matchResult: result };
-    } catch (err: any) {
-      const msg = err?.message || 'Biometric verification failed.';
-      setAuthError(msg);
-      return { success: false, error: msg };
-    } finally {
-      setIsLoading(false);
-    }
+    } catch (err: any) { const msg = err?.message || 'Biometric verification failed.'; setAuthError(msg); return { success: false, error: msg }; }
+    finally { setIsLoading(false); }
   };
 
-  const fastLoginWithPasscode = (
-    _role: UserRole,
-    _passcode: string
-  ): { success: boolean; user?: UserProfile; error?: string } => {
-    const error = 'Passcode bypass is disabled. Use authenticated email/password login or the labelled SIH evaluation flow.';
-    setAuthError(error);
-    return { success: false, error };
+  const fastLoginWithPasscode = (_role: UserRole, _passcode: string) => {
+    const error = 'Passcode bypass is disabled. Use authenticated email/password login or the labelled SIH evaluation flow.'; setAuthError(error); return { success: false, error };
   };
 
-  const verifyFaceDescriptor1ToN = async (
-    liveVector: number[],
-    _targetProfile: UserProfile
-  ): Promise<FaceMatchResult> => {
-    const candidates = await getAllRegisteredFaceCandidates();
-    return matchFace1ToN(liveVector, candidates, 0.45);
+  const verifyFaceDescriptor1ToN = async (liveVector: number[], _targetProfile: UserProfile) => {
+    const candidates = await getAllRegisteredFaceCandidates(); return matchFace1ToN(liveVector, candidates, 0.45);
   };
 
   const signOut = async () => {
     setIsLoading(true);
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-    } catch (error: any) {
-      setAuthError(error?.message || 'Logout failed.');
-    } finally {
-      setCurrentUser(null);
-      setIsLoading(false);
-    }
+    try { const { error } = await supabase.auth.signOut(); if (error) throw error; }
+    catch (error: any) { setAuthError(error?.message || 'Logout failed.'); }
+    finally { setCurrentUser(null); setIsLoading(false); }
   };
 
-  return (
-    <AuthContext.Provider
-      value={{
-        currentUser,
-        isLoading,
-        authError,
-        setCurrentUser,
-        setAuthError,
-        signIn,
-        signUp,
-        verifyUserRegistration,
-        fastLoginWithBiometrics,
-        fastLoginWithPasscode,
-        verifyFaceDescriptor1ToN,
-        signOut
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{ currentUser, isLoading, authError, setCurrentUser, setAuthError, signIn, signUp, verifyUserRegistration, fastLoginWithBiometrics, fastLoginWithPasscode, verifyFaceDescriptor1ToN, signOut }}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
