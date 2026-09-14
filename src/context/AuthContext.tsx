@@ -68,17 +68,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const explicitSignOutRef = useRef(false);
+  const currentUserRef = useRef<UserProfile | null>(null);
   const mountedRef = useRef(true);
+
+  const updateCurrentUser = (user: UserProfile | null) => {
+    currentUserRef.current = user;
+    if (mountedRef.current) setCurrentUser(user);
+  };
 
   const activateAuthenticatedProfile = async (userId: string): Promise<UserProfile | null> => {
     const profile = await loadProfile(userId);
     if (!profile) throw new Error('Your account is authenticated, but no Capacity Connect profile exists.');
     if (profile.accountStatus === 'pending') throw new Error('Your administrator account is pending approval. An existing Capacity Connect administrator must approve it before you can sign in.');
     if (profile.accountStatus === 'rejected') throw new Error('Your account registration was not approved. Please contact Capacity Connect administration.');
-    if (mountedRef.current) {
-      setCurrentUser(profile);
-      setAuthError(null);
-    }
+    updateCurrentUser(profile);
+    setAuthError(null);
     return profile;
   };
 
@@ -91,9 +95,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw error;
-        if (session?.user && !cancelled) {
-          await activateAuthenticatedProfile(session.user.id);
-        }
+        if (session?.user && !cancelled) await activateAuthenticatedProfile(session.user.id);
       } catch (error: any) {
         if (!cancelled) setAuthError(error?.message || 'Unable to restore authentication session.');
       } finally {
@@ -105,38 +107,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
       if (cancelled) return;
-
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        // Profile restoration is deliberately kept outside this callback because
-        // Supabase may still hold its auth lock while dispatching the event.
-        return;
-      }
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') return;
 
       if (event === 'SIGNED_OUT') {
         if (explicitSignOutRef.current) {
+          currentUserRef.current = null;
           setCurrentUser(null);
           setAuthError(null);
           explicitSignOutRef.current = false;
           return;
         }
 
-        // Do NOT clear an already authenticated UI session because of a transient
-        // SIGNED_OUT notification. Supabase can emit this while restoring/rotating
-        // storage. A missing session will be handled by the next full restoration;
-        // clearing here is what caused the LoginPage bounce/loop.
-        if (currentUser) return;
-
-        window.setTimeout(() => {
-          void (async () => {
-            try {
-              const { data } = await supabase.auth.getSession();
-              if (!mountedRef.current || cancelled) return;
-              if (data.session?.user) await activateAuthenticatedProfile(data.session.user.id);
-            } catch {
-              // Leave the existing login UI alone; sign-in failures are surfaced by signIn().
-            }
-          })();
-        }, 100);
+        // Never bounce an authenticated UI back to LoginPage because of a transient
+        // auth event. Only an explicit logout is allowed to clear the local user.
+        if (currentUserRef.current) return;
       }
     });
 
@@ -145,7 +129,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       mountedRef.current = false;
       listener.subscription.unsubscribe();
     };
-  }, [currentUser]);
+  }, []);
 
   const signIn = async (email: string, password: string) => {
     setIsLoading(true);
@@ -188,7 +172,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (role === 'admin') return { success: true, error: 'Admin registration submitted. Your account will be available after approval by an existing administrator.' };
       if (data.session) {
         const createdProfile = await loadProfile(data.user.id);
-        if (createdProfile) setCurrentUser(createdProfile);
+        if (createdProfile) updateCurrentUser(createdProfile);
         return { success: true, user: createdProfile || undefined };
       }
       return { success: true, error: 'Registration successful. Check your email to confirm your account.' };
@@ -254,11 +238,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       explicitSignOutRef.current = false;
       setAuthError(error?.message || 'Logout failed.');
     } finally {
-      setCurrentUser(null); setIsLoading(false);
+      updateCurrentUser(null);
+      setIsLoading(false);
     }
   };
 
-  return <AuthContext.Provider value={{ currentUser, isLoading, authError, setCurrentUser, setAuthError, signIn, signUp, verifyUserRegistration, fastLoginWithBiometrics, fastLoginWithPasscode, verifyFaceDescriptor1ToN, signOut }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ currentUser, isLoading, authError, setCurrentUser: updateCurrentUser, setAuthError, signIn, signUp, verifyUserRegistration, fastLoginWithBiometrics, fastLoginWithPasscode, verifyFaceDescriptor1ToN, signOut }}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = (): AuthContextType => {
