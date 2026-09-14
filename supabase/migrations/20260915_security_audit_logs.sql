@@ -8,15 +8,13 @@ create table if not exists public.security_audit_logs (
 );
 
 alter table public.security_audit_logs enable row level security;
-
-create index if not exists security_audit_logs_created_at_idx
-  on public.security_audit_logs (created_at desc);
-create index if not exists security_audit_logs_event_type_idx
-  on public.security_audit_logs (event_type);
-
 revoke all on public.security_audit_logs from anon, authenticated;
 
+create index if not exists security_audit_logs_created_at_idx on public.security_audit_logs (created_at desc);
+create index if not exists security_audit_logs_event_type_idx on public.security_audit_logs (event_type);
+
 create or replace function public.write_security_audit(
+  p_actor_id uuid,
   p_event_type text,
   p_target_user_id uuid default null,
   p_metadata jsonb default '{}'::jsonb
@@ -24,66 +22,60 @@ create or replace function public.write_security_audit(
 returns void
 language plpgsql
 security definer
-set search_path = pg_catalog, public
+set search_path = public, pg_temp
 as $$
 begin
-  if auth.uid() is null then
-    raise exception 'Authentication required';
+  if auth.uid() is null or auth.uid() <> p_actor_id then
+    raise exception 'Unauthorized';
   end if;
-
-  insert into public.security_audit_logs(actor_id, event_type, target_user_id, metadata)
-  values (auth.uid(), p_event_type, p_target_user_id, coalesce(p_metadata, '{}'::jsonb));
+  insert into public.security_audit_logs(actor_id,event_type,target_user_id,metadata)
+  values (p_actor_id,p_event_type,p_target_user_id,coalesce(p_metadata,'{}'::jsonb));
 end;
 $$;
 
-revoke all on function public.write_security_audit(text, uuid, jsonb) from public, anon;
-grant execute on function public.write_security_audit(text, uuid, jsonb) to authenticated;
+revoke execute on function public.write_security_audit(uuid,text,uuid,jsonb) from public, anon;
+grant execute on function public.write_security_audit(uuid,text,uuid,jsonb) to authenticated;
 
 create or replace function public.review_profile(target_profile_id uuid, decision text)
-returns public.profiles
+returns boolean
 language plpgsql
 security definer
-set search_path = pg_catalog, public
+set search_path = public, pg_temp
 as $$
 declare
-  target public.profiles;
-  actor uuid := auth.uid();
-  new_status text;
+  changed boolean;
 begin
-  if actor is null or not public.is_platform_admin() then
-    raise exception 'Active admin privileges required';
+  if not public.is_platform_admin() then
+    raise exception 'Only active administrators can review registrations';
   end if;
-
-  if target_profile_id = actor then
-    raise exception 'Administrators cannot approve or reject themselves';
+  if decision not in ('approve','reject') then
+    raise exception 'Decision must be approve or reject';
   end if;
-
-  if decision not in ('approve', 'reject') then
-    raise exception 'Invalid decision';
+  if target_profile_id = auth.uid() then
+    raise exception 'Administrators cannot review their own account';
   end if;
-
-  new_status := case when decision = 'approve' then 'active' else 'rejected' end;
 
   update public.profiles
-     set account_status = new_status,
-         approval_notes = case when decision = 'approve' then null else 'Registration rejected by administrator' end,
-         approved_at = case when decision = 'approve' then now() else null end,
-         approved_by = case when decision = 'approve' then actor else null end,
+     set account_status = case when decision='approve' then 'active' else 'rejected' end,
+         approved_at = case when decision='approve' then now() else null end,
+         approved_by = case when decision='approve' then auth.uid() else null end,
          updated_at = now()
    where id = target_profile_id
      and account_status = 'pending'
-  returning * into target;
+     and role in ('trainee','trainer','admin');
 
-  if target.id is null then
-    raise exception 'Pending profile not found';
+  changed := found;
+  if changed then
+    perform public.write_security_audit(
+      auth.uid(),
+      case when decision='approve' then 'account_approve' else 'account_reject' end,
+      target_profile_id,
+      jsonb_build_object('decision',decision)
+    );
   end if;
-
-  insert into public.security_audit_logs(actor_id, event_type, target_user_id, metadata)
-  values (actor, 'account_' || decision, target_profile_id, jsonb_build_object('role', target.role));
-
-  return target;
+  return changed;
 end;
 $$;
 
-revoke all on function public.review_profile(uuid, text) from public, anon, authenticated;
-grant execute on function public.review_profile(uuid, text) to authenticated;
+revoke execute on function public.review_profile(uuid,text) from public, anon;
+grant execute on function public.review_profile(uuid,text) to authenticated;
