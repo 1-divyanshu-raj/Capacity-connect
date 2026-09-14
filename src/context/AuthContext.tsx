@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { UserProfile, UserRole } from '../types';
-import { supabase, checkUserRegistrationInSupabase, getAllRegisteredFaceCandidates, matchFace1ToN, FaceMatchResult, getRegisteredPersonnelRegistry } from '../lib/supabase';
+import { supabase, checkUserRegistrationInSupabase, getAllRegisteredFaceCandidates, FaceMatchResult, getRegisteredPersonnelRegistry } from '../lib/supabase';
 
 export interface AuthContextType {
   currentUser: UserProfile | null;
@@ -67,50 +67,80 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const explicitSignOutRef = useRef(false);
+  const mountedRef = useRef(true);
 
   const activateAuthenticatedProfile = async (userId: string): Promise<UserProfile | null> => {
     const profile = await loadProfile(userId);
     if (!profile) throw new Error('Your account is authenticated, but no Capacity Connect profile exists.');
     if (profile.accountStatus === 'pending') throw new Error('Your administrator account is pending approval. An existing Capacity Connect administrator must approve it before you can sign in.');
     if (profile.accountStatus === 'rejected') throw new Error('Your account registration was not approved. Please contact Capacity Connect administration.');
-    setCurrentUser(profile);
+    if (mountedRef.current) {
+      setCurrentUser(profile);
+      setAuthError(null);
+    }
     return profile;
   };
 
   useEffect(() => {
-    let mounted = true;
+    mountedRef.current = true;
+    let cancelled = false;
+
     const restoreSession = async () => {
       setIsLoading(true);
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw error;
-        if (session?.user && mounted) {
-          try {
-            await activateAuthenticatedProfile(session.user.id);
-          } catch (err: any) {
-            if (mounted) setAuthError(err?.message || 'Unable to restore authentication session.');
-          }
+        if (session?.user && !cancelled) {
+          await activateAuthenticatedProfile(session.user.id);
         }
       } catch (error: any) {
-        if (mounted) setAuthError(error?.message || 'Unable to restore authentication session.');
+        if (!cancelled) setAuthError(error?.message || 'Unable to restore authentication session.');
       } finally {
-        if (mounted) setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
+
     void restoreSession();
 
-    // Do not perform database work inside Supabase's auth callback. SIGNED_IN can fire
-    // while the client's internal auth lock is held; doing a profile query here can race
-    // the session write and repeatedly return the UI to the login screen.
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
-      if (!mounted) return;
+      if (cancelled) return;
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        // The initial restore/sign-in path owns profile loading. Do not query Supabase
+        // from inside this callback because Supabase may still hold its auth lock.
+        return;
+      }
       if (event === 'SIGNED_OUT') {
-        setCurrentUser(null);
-        setAuthError(null);
+        // A transient SIGNED_OUT event can occur while Supabase rotates/restores its
+        // session. Only clear the UI immediately for an explicit user logout. Otherwise
+        // verify the session first so the app cannot bounce back to LoginPage endlessly.
+        if (explicitSignOutRef.current) {
+          setCurrentUser(null);
+          setAuthError(null);
+          explicitSignOutRef.current = false;
+          return;
+        }
+        window.setTimeout(() => {
+          void (async () => {
+            try {
+              const { data } = await supabase.auth.getSession();
+              if (!mountedRef.current || cancelled) return;
+              if (data.session?.user) {
+                await activateAuthenticatedProfile(data.session.user.id);
+              } else {
+                setCurrentUser(null);
+              }
+            } catch (error: any) {
+              if (mountedRef.current && !cancelled) setAuthError(error?.message || 'Unable to restore authentication session.');
+            }
+          })();
+        }, 50);
       }
     });
+
     return () => {
-      mounted = false;
+      cancelled = true;
+      mountedRef.current = false;
       listener.subscription.unsubscribe();
     };
   }, []);
@@ -118,13 +148,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const signIn = async (email: string, password: string) => {
     setIsLoading(true);
     setAuthError(null);
+    explicitSignOutRef.current = false;
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
       if (error) throw error;
       if (!data.user) throw new Error('Authentication succeeded but no user was returned.');
+
       // Force a session read before the protected profile query so RLS sees the new JWT.
-      const { data: sessionData } = await supabase.auth.getSession();
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
       if (!sessionData.session?.user) throw new Error('Login succeeded, but the secure session was not established. Please try again.');
+
       const profile = await activateAuthenticatedProfile(data.user.id);
       return { success: true, user: profile || undefined };
     } catch (error: any) {
@@ -182,7 +216,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsLoading(true); setAuthError(null);
     try {
       const candidates = await getAllRegisteredFaceCandidates();
-      const result = matchFace1ToN(liveVector, candidates, 0.45);
+      const result = (await import('../lib/supabase')).matchFace1ToN(liveVector, candidates, 0.45);
       if (!result.matched || !result.bestMatchUser || result.bestDistance > 0.45) {
         const error = 'Biometric verification failed: no matching registered profile was found.';
         setAuthError(error); return { success: false, error, matchResult: result };
@@ -206,15 +240,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const verifyFaceDescriptor1ToN = async (liveVector: number[], _targetProfile: UserProfile) => {
     const candidates = await getAllRegisteredFaceCandidates();
-    return matchFace1ToN(liveVector, candidates, 0.45);
+    return (await import('../lib/supabase')).matchFace1ToN(liveVector, candidates, 0.45);
   };
 
   const signOut = async () => {
     setIsLoading(true);
+    explicitSignOutRef.current = true;
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
     } catch (error: any) {
+      explicitSignOutRef.current = false;
       setAuthError(error?.message || 'Logout failed.');
     } finally {
       setCurrentUser(null); setIsLoading(false);
